@@ -82,3 +82,17 @@ Index: rustc-1.54.0-src/src/llvm-project/compiler-rt/cmake/base-config-ix.cmake
      elseif("${COMPILER_RT_DEFAULT_TARGET_ARCH}" MATCHES "wasm32")
        test_target_arch(wasm32 "" "--target=wasm32-unknown-unknown")
      elseif("${COMPILER_RT_DEFAULT_TARGET_ARCH}" MATCHES "wasm64")
+Index: rustc-1.54.0-src/src/bootstrap/lib.rs
+===================================================================
+--- rustc-1.54.0-src.orig/src/bootstrap/lib.rs
++++ rustc-1.54.0-src/src/bootstrap/lib.rs
+@@ -855,6 +855,9 @@ impl Build {
+         if target.contains("apple-darwin") {
+             base.push("-stdlib=libc++".into());
+         }
++        if target.contains("riscv") {
++            base.push("-mno-relax".into());
++        }
+ 
+         // Work around an apparently bad MinGW / GCC optimization,
+         // See: http://lists.llvm.org/pipermail/cfe-dev/2016-December/051980.html
