@@ -1,0 +1,30 @@
+Link libcxxabi with gcc_eh when linking with gcc_s is
+not desired. Normally, llvm's libunwind would be used but
+we are not using libunwind in ChromeOS right now because of
+some reported crashes when libunwind was used.
+https://crbug.com/747113
+
+diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
+index efbea67..e39335f 100644
+--- a/libcxxabi/src/CMakeLists.txt
++++ b/libcxxabi/src/CMakeLists.txt
+@@ -68,8 +68,10 @@
+   else()
+     list(APPEND LIBCXXABI_LIBRARIES unwind)
+   endif()
++elseif(LIBCXXABI_HAS_GCC_S_LIB)
++    list(APPEND libraries gcc_s)
+ else()
+-  add_library_flags_if(LIBCXXABI_HAS_GCC_S_LIB gcc_s)
++    list(APPEND libraries gcc_eh)
+ endif()
+ if (MINGW)
+   # MINGW_LIBRARIES is defined in config-ix.cmake
+@@ -77,7 +79,7 @@
+ endif()
+ 
+ # Setup flags.
+-add_link_flags_if_supported(-nodefaultlibs)
++add_link_flags_if_supported(-nostdlib++)
+ 
+ set(LIBCXXABI_SHARED_LINK_FLAGS)

@@ -1,0 +1,3 @@
+CC=riscv64-cros-linux-gnu-clang
+CXX=riscv64-cros-linux-gnu-clang++
+LD=riscv64-cros-linux-gnu-ld.lld

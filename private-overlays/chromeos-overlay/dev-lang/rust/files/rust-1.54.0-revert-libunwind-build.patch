@@ -1,0 +1,32 @@
+From ba74214e3bfc43dc22f8161bf08ab7a78d0e08f8 Mon Sep 17 00:00:00 2001
+From: George Burgess IV <gbiv@google.com>
+Date: Sun, 1 Aug 2021 07:08:10 +0000
+Subject: [PATCH 6/8] apply new version of libunwind's patch
+
+---
+ library/unwind/build.rs | 2 --
+ 1 file changed, 2 deletions(-)
+
+diff --git a/library/unwind/build.rs b/library/unwind/build.rs
+index a7d52670b..0ccf71030 100644
+--- a/library/unwind/build.rs
++++ b/library/unwind/build.rs
+@@ -104,7 +104,6 @@ mod llvm_libunwind {
+         cpp_cfg.flag("-nostdinc++");
+         cpp_cfg.flag("-fno-exceptions");
+         cpp_cfg.flag("-fno-rtti");
+-        cpp_cfg.flag_if_supported("-fvisibility-global-new-delete-hidden");
+ 
+         // Don't set this for clang
+         // By default, Clang builds C code in GNU C17 mode.
+@@ -129,7 +128,6 @@ mod llvm_libunwind {
+             cfg.flag("-fstrict-aliasing");
+             cfg.flag("-funwind-tables");
+             cfg.flag("-fvisibility=hidden");
+-            cfg.define("_LIBUNWIND_DISABLE_VISIBILITY_ANNOTATIONS", None);
+             cfg.include(root.join("include"));
+             cfg.cargo_metadata(false);
+ 
+-- 
+2.32.0.554.ge1b32706d8-goog
+

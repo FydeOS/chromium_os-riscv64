@@ -1,0 +1,84 @@
+Index: rustc-1.54.0-src/compiler/rustc_target/src/spec/mod.rs
+===================================================================
+--- rustc-1.54.0-src.orig/compiler/rustc_target/src/spec/mod.rs
++++ rustc-1.54.0-src/compiler/rustc_target/src/spec/mod.rs
+@@ -878,6 +878,7 @@ supported_targets! {
+     ("riscv64gc-unknown-none-elf", riscv64gc_unknown_none_elf),
+     ("riscv64gc-unknown-linux-gnu", riscv64gc_unknown_linux_gnu),
+     ("riscv64gc-unknown-linux-musl", riscv64gc_unknown_linux_musl),
++    ("riscv64-cros-linux-gnu", riscv64_cros_linux_gnu),
+ 
+     ("aarch64-unknown-none", aarch64_unknown_none),
+     ("aarch64-unknown-none-softfloat", aarch64_unknown_none_softfloat),
+Index: rustc-1.54.0-src/compiler/rustc_target/src/spec/riscv64_cros_linux_gnu.rs
+===================================================================
+--- rustc-1.54.0-src.orig/compiler/rustc_target/src/spec/riscv64_cros_linux_gnu.rs
++++ rustc-1.54.0-src/compiler/rustc_target/src/spec/riscv64_cros_linux_gnu.rs
+@@ -1,6 +1,11 @@
+-use crate::spec::{CodeModel, Target, TargetOptions};
++use crate::spec::{CodeModel, Target, TargetOptions, LinkerFlavor, LinkArgs};
+ 
+ pub fn target() -> Target {
++    let mut link_args = LinkArgs::new();
++    link_args.insert(
++        LinkerFlavor::Gcc, 
++        vec!["-mno-relax".to_string()],
++     );
+     Target {
+         llvm_target: "riscv64-cros-linux-gnu".to_string(),
+         pointer_width: 64,
+@@ -9,6 +14,7 @@ pub fn target() -> Target {
+         options: TargetOptions {
+             unsupported_abis: super::riscv_base::unsupported_abis(),
+             code_model: Some(CodeModel::Medium),
++            pre_link_args: link_args,
+             cpu: "generic-rv64".to_string(),
+             features: "+m,+a,+f,+d,+c".to_string(),
+             llvm_abiname: "lp64d".to_string(),
+Index: rustc-1.54.0-src/src/bootstrap/native.rs
+===================================================================
+--- rustc-1.54.0-src.orig/src/bootstrap/native.rs
++++ rustc-1.54.0-src/src/bootstrap/native.rs
+@@ -479,6 +479,9 @@ fn configure_cmake(
+             cflags.push_str(" -miphoneos-version-min=10.0");
+         }
+     }
++    if target.contains("riscv") {
++      cflags.push_str(" -mno-relax");
++    }
+     if builder.config.llvm_clang_cl.is_some() {
+         cflags.push_str(&format!(" --target={}", target))
+     }
+@@ -490,6 +493,9 @@ fn configure_cmake(
+     if let Some(ref s) = builder.config.llvm_cxxflags {
+         cxxflags.push_str(&format!(" {}", s));
+     }
++    if target.contains("riscv") {
++      cxxflags.push_str(" -mno-relax");
++    }
+     if builder.config.llvm_clang_cl.is_some() {
+         cxxflags.push_str(&format!(" --target={}", target))
+     }
+@@ -820,6 +826,9 @@ fn supported_sanitizers(
+         "x86_64-unknown-linux-musl" => {
+             common_libs("linux", "x86_64", &["asan", "lsan", "msan", "tsan"])
+         }
++        "riscv64-cros-linux-gnu" => {
++            common_libs("linux", "riscv64", &["asan"])
++        }
+         _ => Vec::new(),
+     }
+ }
+Index: rustc-1.54.0-src/src/llvm-project/compiler-rt/cmake/base-config-ix.cmake
+===================================================================
+--- rustc-1.54.0-src.orig/src/llvm-project/compiler-rt/cmake/base-config-ix.cmake
++++ rustc-1.54.0-src/src/llvm-project/compiler-rt/cmake/base-config-ix.cmake
+@@ -217,7 +217,7 @@ macro(test_targets)
+     elseif("${COMPILER_RT_DEFAULT_TARGET_ARCH}" MATCHES "riscv32")
+       test_target_arch(riscv32 "" "")
+     elseif("${COMPILER_RT_DEFAULT_TARGET_ARCH}" MATCHES "riscv64")
+-      test_target_arch(riscv64 "" "")
++      test_target_arch(riscv64 "" "-mno-relax")
+     elseif("${COMPILER_RT_DEFAULT_TARGET_ARCH}" MATCHES "wasm32")
+       test_target_arch(wasm32 "" "--target=wasm32-unknown-unknown")
+     elseif("${COMPILER_RT_DEFAULT_TARGET_ARCH}" MATCHES "wasm64")

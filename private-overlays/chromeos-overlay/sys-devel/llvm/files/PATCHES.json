@@ -1,0 +1,1038 @@
+[
+    {
+        "comment": "Adds a allowlist of packages that have known memory leaks",
+        "rel_patch_path": "llvm-next-leak-allowlist.v2.patch",
+        "start_version": 370808,
+        "end_version": 414798
+    },
+    {
+        "comment": "Adds a allowlist of packages that have known memory leaks",
+        "rel_patch_path": "llvm-leak-allowlist.v3.patch",
+        "start_version": 414798
+    },
+    {
+        "comment": "Sets the ASAN message to go to /va/log/asan${pid} by\ndefault",
+        "rel_patch_path": "clang-4.0-asan-default-path.patch",
+        "end_version": 408666
+    },
+    {
+        "comment": "Sets the ASAN message to go to /va/log/asan${pid} by\ndefault",
+        "rel_patch_path": "clang-12.0-asan-default-path.patch",
+        "start_version": 408666
+    },
+    {
+        "comment": "Makes llvm not generate .cgprofile entries when we\ndo not use integrated-as",
+        "rel_patch_path": "llvm-9.0-no-cgprofile.patch",
+        "end_version": 388757
+    },
+    {
+        "comment": "Used as destination of target generators",
+        "rel_patch_path": "cmake/llvm-3.8-allow_custom_cmake_build_types.patch"
+    },
+    {
+        "comment": "Fixes crbug/591436. Force fallback to traditional executable detection",
+        "rel_patch_path": "llvm-8.0-clang-executable-detection.v2.patch",
+        "start_version": 370808
+    },
+    {
+        "comment": "Temporary workaround. Breakpad cannot handle Dwarf\nVersion 4. Works around issue by forcing Debug Frames\nversion of Dwarf to be version 1, while leaving the rest of\nthe Dwarf data at version 4",
+        "rel_patch_path": "llvm-3.9-dwarf-version.patch"
+    },
+    {
+        "comment": "Fixes clang.elf calling clang.elf because direct\ncalls to clang.elf misses all environment setup in clang\nwrapper. Calls to clang wrapper instead of clang.elf binary",
+        "rel_patch_path": "llvm-3.8-invocation.patch",
+        "end_version": 420001
+    },
+    {
+        "comment": "Uses argv[0] to get host system information. Created\na wrapper of LLD and real lld becomes lld.elf so the LLD\ncannot get the host system information and dies",
+        "rel_patch_path": "lld-10.0-invoke-name.patch",
+        "start_version": 365730
+    },
+    {
+        "comment": "Fix type-dependency of bitfields in templates",
+        "rel_patch_path": "cherry/a58017e5cae5be948fd1913b68d46553e87aa622.patch",
+        "start_version": 380035,
+        "end_version": 384465
+    },
+    {
+        "comment": "[ARM] Fix infinite loop when lowering STRICT_FP_EXTEND",
+        "rel_patch_path": "cherry/0ec57972967dfb43fc022c2e3788be041d1db730.patch",
+        "start_version": 380035,
+        "end_version": 384546
+    },
+    {
+        "comment": "[DAGCombine] Fix alias analysis for unaligned accesses",
+        "rel_patch_path": "cherry/1de10705594c7a2c9b8fde901c391bd84062ae04.patch",
+        "start_version": 380035,
+        "end_version": 385989
+    },
+    {
+        "comment": "[cmake] By default do not build compiler-rt with PGO",
+        "rel_patch_path": "cherry/20dfcf189d224e637377970318a021c81d2fbde0.patch",
+        "start_version": 380035,
+        "end_version": 386784
+    },
+    {
+        "comment": "[cmake] Strip quotes in compiler-rt/lib/crt; error if checks fail",
+        "rel_patch_path": "cherry/cfc3e7f458f8798782c01a0dadf872c60340c23e.patch",
+        "start_version": 380035,
+        "end_version": 386785
+    },
+    {
+        "comment": "[Sema] Fix pointer-to-int-cast diagnostic for _Bool",
+        "rel_patch_path": "cherry/56eb15a1c71061043d50aa669407816bc08dfb5d.patch",
+        "start_version": 384785,
+        "end_version": 385452
+    },
+    {
+        "comment": "[Sema] Add -Wpointer-to-enum-cast and -Wvoid-pointer-to-enum-cast",
+        "rel_patch_path": "cherry/2a41b31fcdfcb67ab7038fc2ffb606fd50b83a84.patch",
+        "start_version": 384785,
+        "end_version": 386665
+    },
+    {
+        "comment": "[X86] Don't add DELETED_NODES to DAG combine worklist after calling",
+        "rel_patch_path": "cherry/2f4f8fcf64c67ee327e19b74a82a2330cfb32312.patch",
+        "start_version": 385457,
+        "end_version": 386077
+    },
+    {
+        "comment": "[ThinLTO/LowerTypeTests] Handle unpromoted local type ids",
+        "rel_patch_path": "cherry/873c0d0786dcf22f4af39f65df824917f70f2170.patch",
+        "start_version": 384279,
+        "end_version": 386151
+    },
+    {
+        "comment": "Revert Restore [WPD/LowerTypeTests] Delay lowering/removal of type tests until after ICP",
+        "rel_patch_path": "cherry/80bf137fa132ea33204e98bbefa924afe9258a4e.patch",
+        "start_version": 384279,
+        "end_version": 386180
+    },
+    {
+        "comment": "Revert Reland [DebugInfo] Enable the debug entry values feature by default",
+        "rel_patch_path": "cherry/f82b32a51e22cc56d20f695772797127d3f9d85a.patch",
+        "start_version": 386806,
+        "end_version": 387212
+    },
+    {
+        "comment": "[JumpThreading] Skip unconditional PredBB when threading jumps through two basic blocks",
+        "rel_patch_path": "cherry/13a97305ba77f44eccba16087320c8aa016ac6da.patch",
+        "start_version": 383663,
+        "end_version": 385016
+    },
+    {
+        "comment": "Revert \"[ARM] Improve codegen of volatile load/store of i64\"",
+        "rel_patch_path": "cherry/af2a38458197e07cbd03ea9446714008488826d8.patch",
+        "start_version": 380711,
+        "end_version": 383972
+    },
+    {
+        "comment": "Revert \"[InstCombine][DebugInfo] Fold constants wrapped in metadata\"",
+        "rel_patch_path": "cherry/982944525c7706c4dee00042d5b7cf2f0d87804f.patch",
+        "start_version": 383041,
+        "end_version": 384124
+    },
+    {
+        "comment": "Revert \"[LICM] Support hosting of dynamic allocas out of loops\"",
+        "rel_patch_path": "cherry/14845b2c459021e3dbf2ead52d707d4a7db40cbb.patch",
+        "start_version": 376772,
+        "end_version": 385655
+    },
+    {
+        "comment": "Revert \"[clang] detect switch fallthrough marked by a comment (PR43465)\"",
+        "rel_patch_path": "cherry/c61401b89742f230b7e6a2cc0548fbf7442e906d.patch",
+        "start_version": 383396,
+        "end_version": 386178
+    },
+    {
+        "comment": "[CUDA] Warn about unsupported CUDA SDK version only if it's used.",
+        "rel_patch_path": "cherry/eb2ba2ea953b5ea73cdbb598f77470bde1c6a011.patch",
+        "start_version": 382740,
+        "end_version": 387062
+    },
+    {
+        "comment": "[DAGCombiner] Do not fold truncate(build_vector(..)) if it creates an illegal type",
+        "rel_patch_path": "cherry/edcfb47ff6d5562e22207f364c65f84302aa346b.patch",
+        "start_version": 383902,
+        "end_version": 387801
+    },
+    {
+        "comment": "Revert d437fba8ef626b6d8b7928540f630163a9b04021",
+        "rel_patch_path": "revert-d437fba8ef626b6d8b7928540f630163a9b04021.patch",
+        "start_version": 383902,
+        "end_version": 391452
+    },
+    {
+        "comment": "PR45181: Fix another invalid DIExpression combination",
+        "rel_patch_path": "cherry/636665331bbd4c369a9f33c4d35fb9a863c94646.patch",
+        "start_version": 387675,
+        "end_version": 387810
+    },
+    {
+        "comment": "[clang][AArch64] readd support for 'p' inline asm constraint",
+        "rel_patch_path": "cherry/5d90f886bc022e7c9144a0ef08ea7ccde7e66030.patch",
+        "start_version": 387430,
+        "end_version": 387475
+    },
+    {
+        "comment": "Revert \"[GISel]: Fix incorrect IRTranslation while translating null pointer types\"",
+        "rel_patch_path": "cherry/b8fc192d42af56b17b7d940e6c226f4969e0d851.patch",
+        "start_version": 328218,
+        "end_version": 388672
+    },
+    {
+        "comment": "Revert \"Convert a reachable llvm_unreachable into an assert.\"",
+        "rel_patch_path": "cherry/7339fca25facb566e969b6ce01f23ac96499d574.patch",
+        "start_version": 386862,
+        "end_version": 388144
+    },
+    {
+        "comment": "Revert \"Include static prof data when collecting loop BBs\"",
+        "rel_patch_path": "cherry/c3417592c847b8bd67deab21bbe6d62a49bde234.patch",
+        "start_version": 385160,
+        "end_version": 388115
+    },
+    {
+        "comment": "Revert \"[FIX] Do not copy an llvm::function_ref if it has to be reused\"",
+        "rel_patch_path": "cherry/0d0b90105f92f6cd9cc7004d565834f4429183fb.patch",
+        "start_version": 384779,
+        "end_version": 387942
+    },
+    {
+        "comment": "Revert \"EHScopeStack::Cleanup has virtual functions so the destructor should be too.\"",
+        "rel_patch_path": "cherry/b5eafda8d3ef02f9f78e090725564dd28e573322.patch",
+        "start_version": 386136,
+        "end_version": 387904
+    },
+    {
+        "comment": "Revert rGe6a7e3b5e3e7 \"[X86][SSE] matchShuffleWithSHUFPD - add support for unary shuffles.\"",
+        "rel_patch_path": "cherry/f424d51c3e195de786204a93a9ccf6367bb26c8e.patch",
+        "start_version": 386843,
+        "end_version": 387882
+    },
+    {
+        "comment": "Revert \"Generate Callee Saved Register (CSR) related cfi directives like .cfi_restore.\"",
+        "rel_patch_path": "cherry/a035726e5aae18bb9be1e61d9aef2a102c3b33ba.patch",
+        "start_version": 386407,
+        "end_version": 387755
+    },
+    {
+        "comment": "Revert \"Avoid emitting unreachable SP adjustments after `throw`\"",
+        "rel_patch_path": "cherry/4e0fe038f438ae1679eae9e156e1f248595b2373.patch",
+        "start_version": 386616,
+        "end_version": 387517
+    },
+    {
+        "comment": "Revert \"[ARM] Improve codegen of volatile load/store of i64\"",
+        "rel_patch_path": "cherry/872ee78f65f47fae19d4f8db7396eb56d902aef1.patch",
+        "start_version": 386906,
+        "end_version": 393974
+    },
+    {
+        "comment": "[LV] Make sure the MaxVF is a power-of-2 by rounding down.",
+        "rel_patch_path": "cherry/b446ec56a2987ba02dc2c80d42100be4a4689215.patch",
+        "start_version": 394115,
+        "end_version": 394897
+    },
+    {
+        "comment": "[ELF] --gdb-index: support .debug_loclists",
+        "rel_patch_path": "cherry/1ccde533425a4ba9d379510206ad680ff9702129.patch",
+        "start_version": 391452,
+        "end_version": 391929
+    },
+    {
+        "comment": "[JumpThreading] ProcessBranchOnXOR(): bailout if any pred ends in indirect branch (PR46857)",
+        "rel_patch_path": "cherry/1da9834557cd4302a5183b8228ce063e69f82602.patch",
+        "start_version": 398304,
+        "end_version": 400503
+    },
+    {
+        "comment": "Fix a crash when the sample profile uses md5 and -sample-profile-merge-inlinee is enabled.",
+        "rel_patch_path": "cherry/836991d3676fda06d0f07c816ba855c8a0c3e0aa.patch",
+        "start_version": 398649,
+        "end_version": 401013
+    },
+    {
+        "comment": "[AutoFDO] Avoid merging inlinee samples multiple times",
+        "rel_patch_path": "cherry/d23c1d6a8dddf0e1b9b9fa64726941e402ede8af.patch",
+        "start_version": 398649,
+        "end_version": 401056
+    },
+    {
+        "comment": "[ELF]: --icf: don't fold sections referencing sections with LCDA after D84610",
+        "rel_patch_path": "cherry/164a02d0fa461c623446bb5e3ee15516bcfad13c.patch",
+        "start_version": 401512,
+        "end_version": 401838
+    },
+    {
+        "comment": "[ELF] Support .cfi_signal_frame",
+        "rel_patch_path": "cherry/d30d46193876102a6bc99b527dfaf79be4b09515.patch",
+        "start_version": 401512,
+        "end_version": 401875
+    },
+    {
+        "comment": "[msan] Support %ms in scanf.",
+        "rel_patch_path": "cherry/aa57cabae2fc5abc08ab3e17b45f2890fc7c9e42.patch",
+        "start_version": 394483,
+        "end_version": 401725
+    },
+    {
+        "comment": "[ELF] Change tombstone values to (.debug_ranges/.debug_loc) 1 and (other .debug_*) 0",
+        "rel_patch_path": "cherry/004be4037e1e9c6092323c5c9268acb3ecf9176c.patch",
+        "start_version": 397144,
+        "end_version": 401729
+    },
+    {
+        "comment": "Implement AVX ABI Warning/error",
+        "rel_patch_path": "cherry/2831a317b689c7f005a29f008a8e4c24485c0711.patch",
+        "start_version": 394483,
+        "end_version": 398009
+    },
+    {
+        "comment": "Make a test case more flexible on Windows wrt the number of backslashes.",
+        "rel_patch_path": "cherry/9f0225894254c4706519c85d6fc06c5382903fef.patch",
+        "start_version": 400963,
+        "end_version": 401010
+    },
+    {
+        "comment": "Revert \"[ELF] Add --dependency-file option\"",
+        "rel_patch_path": "cherry/0bd918c828feb599b278c1876a33caa9c295be6a.patch",
+        "start_version": 400963,
+        "end_version": 401024
+    },
+    {
+        "comment": "Revert \"Switch to using -debug-info-kind=constructor as default (from =limited)\"",
+        "rel_patch_path": "cherry/394db2259575ef3cac8d3d37836b11eb2373c435.patch",
+        "start_version": 398830,
+        "end_version": 400648
+    },
+    {
+        "comment": "[InstCombine] Add test for PR46680 (NFC)",
+        "rel_patch_path": "cherry/13ae440de4a408cf9d1a448def09769ecbecfdf7.patch",
+        "start_version": 398993,
+        "end_version": 399711
+    },
+    {
+        "comment": "[InstCombine] Fix store merge worklist management (PR46680)",
+        "rel_patch_path": "cherry/d12ec0f752e7f2c7f7252539da2d124264ec33f7.patch",
+        "start_version": 398993,
+        "end_version": 399722
+    },
+    {
+        "comment": "Reland \"[InstCombine] Lower infinite combine loop detection thresholds\"",
+        "rel_patch_path": "cherry/2f3862eb9f21e8a0d48505637fefe6e5e295c18c.patch",
+        "start_version": 398993,
+        "end_version": 399726
+    },
+    {
+        "comment": "Revert \"[AddressSanitizer] Don't use weak linkage for __{start,stop}_asan_globals\"",
+        "rel_patch_path": "cherry/cf5df40c4cf1a53a02ab1d56a488642e3dda8f6d.patch",
+        "start_version": 395282,
+        "end_version": 399661
+    },
+    {
+        "comment": "Revert \"[SCEV][IndVarSimplify] insert point should not be block front.\"",
+        "rel_patch_path": "cherry/1cd1c1d62edc6693a3854b22d53c9bbc1b149798.patch",
+        "start_version": 398848,
+        "end_version": 399218
+    },
+    {
+        "comment": "Revert \"[InstCombine] Drop debug loc in TryToSinkInstruction (reland)\"",
+        "rel_patch_path": "cherry/3d52b1e81b7b3891d9132d826d4889119fad7d00.patch",
+        "start_version": 397614,
+        "end_version": 399140
+    },
+    {
+        "comment": "[DWARF] Add cuttoff guarding quadratic validThroughout behaviour",
+        "rel_patch_path": "cherry/b9d977b0ca60c54f11615ca9d144c9f08b29fd85.patch",
+        "start_version": 398603,
+        "end_version": 398603
+    },
+    {
+        "comment": "PR44685: DebugInfo: Handle address-use-invalid type units referencing non-type units",
+        "rel_patch_path": "cherry/be3ef93bf58aa5546c7baadfb21d43b75fbb4e24.patch",
+        "start_version": 394483,
+        "end_version": 402778
+    },
+    {
+        "comment": "[GlobalISel][InlineAsm] Fix matching input constraint to physreg",
+        "rel_patch_path": "cherry/d893278bba01b0e1209e8b8accbdd5cfa75a0932.patch",
+        "start_version": 399163,
+        "end_version": 401652
+    },
+    {
+        "comment": "PR47138: Don't crash if the preferred alignment of an invalid record type is requested.",
+        "rel_patch_path": "cherry/269bc3f5df6c3b75de515a48063c6941ef8fbbe6.patch",
+        "start_version": 400541,
+        "end_version": 402304
+    },
+    {
+        "comment": "Revert \"Canonicalize declaration pointers when forming APValues.\"",
+        "rel_patch_path": "cherry/15d94a7d0f8f0d6b3b5308fff51b286957e45650.patch",
+        "start_version": 405408,
+        "end_version": 405976
+    },
+    {
+        "comment": "Revert \"Canonicalize declaration pointers when forming APValues.\"",
+        "rel_patch_path": "cherry/7b0332389afd705f46b02fcf87ec3414b8dece34.patch",
+        "start_version": 404252,
+        "end_version": 404294
+    },
+    {
+        "comment": "Remove TwoAddressInstructionPass::sink3AddrInstruction.",
+        "rel_patch_path": "cherry/60433c63acb71935111304d71e41b7ee982398f8.patch",
+        "start_version": 398032,
+        "end_version": 399458
+    },
+    {
+        "comment": "[llvm] Add contains(KeyType) -> bool methods to SmallPtrSet",
+        "rel_patch_path": "cherry/a0385bd7acd6e1d16224b4257f4cb50e59f1d75e.patch",
+        "start_version": 398032,
+        "end_version": 399638
+    },
+    {
+        "comment": "Revert \"Outline non returning functions unless a longjmp\"",
+        "rel_patch_path": "cherry/9afb1c566e8cb396da495e2fbbbc53e1814cc3a1.patch",
+        "start_version": 401139,
+        "end_version": 407147
+    },
+    {
+        "comment": "Reland [SimplifyCFG][LoopRotate] SimplifyCFG: disable common instruction hoisting by default, enable late in pipeline",
+        "rel_patch_path": "cherry/bb7d3af1139c36270bc9948605e06f40e4c51541.patch",
+        "start_version": 403178,
+        "end_version": 404489
+    },
+    {
+        "comment": "Revert \"RegAllocFast: Record internal state based on register units\"",
+        "rel_patch_path": "cherry/a21387c65470417c58021f8d3194a4510bb64f46.patch",
+        "start_version": 404250,
+        "end_version": 405159
+    },
+    {
+        "comment": "[NFC][Asan] Rename internal enum value.",
+        "rel_patch_path": "cherry/99a93c3a223e3bfc9a9781bfbf98d2fd4551f923.patch",
+        "start_version": 404249,
+        "end_version": 404300
+    },
+    {
+        "comment": "[NFC][Asan] Inline enum doc strings",
+        "rel_patch_path": "cherry/a9c0bf04043462d43013bc5616aa48f6d3e16b88.patch",
+        "start_version": 404249,
+        "end_version": 404300
+    },
+    {
+        "comment": "[NFC][Asan] Reformat some allocator code",
+        "rel_patch_path": "cherry/48ac5b4833b60f00f0923db11ea31e7316bc78c6.patch",
+        "start_version": 404249,
+        "end_version": 404300
+    },
+    {
+        "comment": "Revert \"[Asan] Cleanup atomic usage in allocator\"",
+        "rel_patch_path": "cherry/dbf04aaade235a0d76c6ad549c091c9fd0ada0e8.patch",
+        "start_version": 404249,
+        "end_version": 404300
+    },
+    {
+        "comment": "[Sema] adds basic -Wfree-nonheap-object functionality",
+        "rel_patch_path": "cherry/425a83a5f069eb1a692145d2c92e6d3bfe564a62.patch",
+        "start_version": 399094,
+        "end_version": 409407
+    },
+    {
+        "comment": "[Sema] adds -Wfree-nonheap-object member var checks",
+        "rel_patch_path": "cherry/ba18bc4925d8cbd4a9354629617cbcafbbd48941.patch",
+        "start_version": 399094,
+        "end_version": 409842
+    },
+    {
+        "comment": "PR47468: Fix findPHICopyInsertPoint, so that copies aren't incorrectly inserted after an INLINEASM_BR.",
+        "rel_patch_path": "cherry/f7a53d82c0902147909f28a9295a9d00b4b27d38.patch",
+        "start_version": 398032,
+        "end_version": 405613
+    },
+    {
+        "comment": "[Driver]: fix compiler-rt path when printing libgcc for baremetal",
+        "rel_patch_path": "cherry/18432bea764863d1c42fd569bd3846673ee4e802.patch",
+        "start_version": 399094,
+        "end_version": 407943
+    },
+    {
+        "comment": "[Inliner] Run always-inliner in inliner-wrapper",
+        "rel_patch_path": "cherry/0291e2c9330930bd74bfb8206cf6447a84bf492c.patch",
+        "start_version": 399094,
+        "end_version": 408784
+    },
+    {
+        "comment": "Fix compiler-rt build on Windows after D89640",
+        "rel_patch_path": "cherry/a7acee89d68473183cc5021d952a56cdf0ae27d3.patch",
+        "start_version": 408224,
+        "end_version": 408314
+    },
+    {
+        "comment": "Revert \"[Sanitizers] Remove OpenBSD support\" + 1",
+        "rel_patch_path": "cherry/7ecd60bb7022bb681b9dc01a9c232fd93b4b169c.patch",
+        "start_version": 408224,
+        "end_version": 408400
+    },
+    {
+        "comment": "Revert \"[PM/CC1] Add -f[no-]split-cold-code CC1 option to toggle splitting\"",
+        "rel_patch_path": "cherry/0628bea5137047232f37c94b74bf26aa9b55f605.patch",
+        "start_version": 408079,
+        "end_version": 408302
+    },
+    {
+        "comment": "clang: disable assert for DK_Linker diagnostics",
+        "rel_patch_path": "disable-dk_linker-assert.patch",
+        "start_version": 399095
+    },
+    {
+        "comment": "Revert \"[ARM][LowOverheadLoops] Adjust Start insertion.\"",
+        "rel_patch_path": "cherry/6dcbc323fd8778ba6db1c4e76c809f93fc82efc5.patch",
+        "start_version": 406792,
+        "end_version": 408442
+    },
+    {
+        "comment": "Revert several changes related to llvm-symbolizer exiting non-zero on failure.",
+        "rel_patch_path": "cherry/a67d164a82bc535025bb65736ee4e5f381500ed8.patch",
+        "start_version": 407995,
+        "end_version": 408654
+    },
+    {
+        "comment": "Revert \"[CodeExtractor] Don't create bitcasts when inserting lifetime markers (NFCI)\"",
+        "rel_patch_path": "cherry/099bffe7f7df41d66195ce33e91888a4a16c6b4a.patch",
+        "start_version": 406638,
+        "end_version": 408753
+    },
+    {
+        "comment": "Revert \"[MBP] Add whole chain to BlockFilterSet instead of individual BB\"",
+        "rel_patch_path": "cherry/e42f6c0ac05bae37be8e2a5fd8861773646eae1b.patch",
+        "start_version": 407951,
+        "end_version": 408780
+    },
+    {
+        "comment": "Revert \"[Statepoints] Allow deopt GC pointer on VReg if gc-live bundle is empty.\"",
+        "rel_patch_path": "cherry/4f7ee55971e7f7a27af69c501e4b395c4079decb.patch",
+        "start_version": 407564,
+        "end_version": 408846
+    },
+    {
+        "comment": "Revert \"[CodeGen] [WinException] Only produce handler data at the end of the function if needed\"",
+        "rel_patch_path": "cherry/cbf25fbed5b46ec47e3ce2799ed9095f2f18ea8f.patch",
+        "start_version": 405820,
+        "end_version": 409948
+    },
+    {
+        "comment": "Revert \"Reland [CFGuard] Add address-taken IAT tables and delay-load support\"",
+        "rel_patch_path": "cherry/418f18c6cdfe56e77669e2f4d3df3bca1020156d.patch",
+        "start_version": 407828,
+        "end_version": 410801
+    },
+    {
+        "comment": "Revert \"[DebugInfo] Improve dbg preservation in LSR.\"",
+        "rel_patch_path": "cherry/808fcfe5944755f08ae88722070302fcf9135e58.patch",
+        "start_version": 407380,
+        "end_version": 412204
+    },
+    {
+        "comment": "Revert \"[AMDGPU][HIP] Switch default DWARF version to 5\"",
+        "rel_patch_path": "cherry/ffba47df76460905965df4b54cf6ba945d2eb1ce.patch",
+        "start_version": 408148,
+        "end_version": 414416
+    },
+    {
+        "comment": "[ARM] Implement harden-sls-retbr for ARM mode",
+        "rel_patch_path": "cherry/195f44278c4361a4a32377a98a1e3a15203d3647.patch",
+        "start_version": 412851,
+        "end_version": 414302
+    },
+    {
+        "comment": "[ARM] Implement harden-sls-retbr for Thumb mode",
+        "rel_patch_path": "cherry/320fd3314e378ae6242a2dde97250a8a94d68e27.patch",
+        "start_version": 412851,
+        "end_version": 414304
+    },
+    {
+        "comment": "[ARM] Harden indirect calls against SLS",
+        "rel_patch_path": "cherry/a4c1f5160e6d1de9a9959ecbf329c2acf4f3ed31.patch",
+        "start_version": 412851,
+        "end_version": 414305
+    },
+    {
+        "comment": "[ARM] harden-sls-blr: avoid r12 and lr in indirect calls.",
+        "rel_patch_path": "cherry/df8ed3928377edc6e9241a56680b694ffa9f4d6d.patch",
+        "start_version": 412851,
+        "end_version": 414306
+    },
+    {
+        "comment": "[ARM] Add clang command line support for -mharden-sls=",
+        "rel_patch_path": "cherry/9c895aea118a2f50ca8413372363c3ff6ecc21bf.patch",
+        "start_version": 412851,
+        "end_version": 414307
+    },
+    {
+        "comment": "[Driver] -gsplit-dwarf: Produce .dwo regardless of -gN for -fthinlto-index=",
+        "rel_patch_path": "cherry/53b34601abf1d48e8df210ab8127b16fd35e275a.patch",
+        "start_version": 413220,
+        "end_version": 415982
+    },
+    {
+        "comment": "Revert \"[clang] Change builtin object size when subobject is invalid\"",
+        "rel_patch_path": "cherry/b270fd59f0a86fe737853abc43e76b9d29a67eea.patch",
+        "start_version": 415398,
+        "end_version": 416525
+    },
+    {
+        "comment": "[ARM] Adjust isSaturatingConditional to return a new SDValue. NFC",
+        "rel_patch_path": "cherry/9ae73cdbc1e59fd3149e60efd2b96e68e8d1669b.patch",
+        "start_version": 405885,
+        "end_version": 416715
+    },
+    {
+        "comment": "[ARM] Disable sign extended SSAT pattern recognition.",
+        "rel_patch_path": "cherry/af0332498405b3a4074cef09845bbacfd4fd594f.patch",
+        "start_version": 405885,
+        "end_version": 416728
+    },
+    {
+        "comment": "[ARM][RegisterScavenging] Don't consider LR liveout if it is not reloaded",
+        "rel_patch_path": "cherry/b9ed8ebe0e2ffa803b0bda60f9bbc9bb26f95000.patch",
+        "start_version": 412851,
+        "end_version": 417334
+    },
+    {
+        "comment": "Revert \"[ConstantFold] Fold more operations to poison\"",
+        "rel_patch_path": "cherry/06829034ca64b8c83a5b20d8abe5ddbfe7af0004.patch",
+        "start_version": 412851,
+        "end_version": 417900
+    },
+    {
+        "comment": "[ELF] Allow R_386_GOTOFF from .debug_info",
+        "rel_patch_path": "cherry/b3165a70ae83b46dc145f335dfa9690ece361e92.patch",
+        "start_version": 412851,
+        "end_version": 418036
+    },
+    {
+        "comment": "[Clang] Make nomerge attribute a function attribute as well as a statement attribute.",
+        "rel_patch_path": "cherry/fb0f7288051eb2745bb9211306f53ff9aa6f73e2.patch",
+        "start_version": 412851,
+        "end_version": 414124
+    },
+    {
+        "comment": "test file update for e53bbd9951",
+        "rel_patch_path": "test-nomerge-fd739804e0591468762eb87488a497a3f7d4afb0.patch",
+        "start_version": 412851,
+        "end_version": 414886
+    },
+    {
+        "comment": "[IR] move nomerge attribute from function declaration/definition to callsites",
+        "rel_patch_path": "cherry/e53bbd99516fc7b612df1ae08d48288d0b8784ea.patch",
+        "start_version": 412851,
+        "end_version": 415826
+    },
+    {
+        "comment": "[llvm-objcopy] preserve file ownership when overwritten by root",
+        "rel_patch_path": "cherry/c2a84771bb63947695ea50b89160c02b36fb634d.patch",
+        "start_version": 412851,
+        "end_version": 418870
+    },
+    {
+        "comment": "[clang][Arm] Fix handling of -Wa,-implicit-it=",
+        "rel_patch_path": "cherry/a680bc3a31d36d321ccf3801bdcff74d58842bfa.patch",
+        "start_version": 412851,
+        "end_version": 418680
+    },
+    {
+        "comment": "[Thumb2] support `movs pc, lr` alias for `subs pc, lr, #0`/`eret`",
+        "rel_patch_path": "cherry/68945a8686708c6e4c74b9aeb231b8c4e1731181.patch",
+        "start_version": 412851,
+        "end_version": 418542
+    },
+    {
+        "comment": "[clang][Arm] Fix handling of -Wa,-march=",
+        "rel_patch_path": "cherry/1d51c699b9e2ebc5bcfdbe85c74cc871426333d4.patch",
+        "start_version": 412851,
+        "end_version": 418022
+    },
+    {
+        "comment": "[X86] Add reduced test case for PR49162",
+        "rel_patch_path": "cherry/5ca3ef98a71598d368f6f4aaf0b385b50b67ce4a.patch",
+        "start_version": 416609,
+        "end_version": 418887
+    },
+    {
+        "comment": "[DAG] Fix shift amount limit in SimplifyDemandedBits trunc(shift(x,c)) to truncated bitwidth",
+        "rel_patch_path": "cherry/7ad0c573bd4a68dc81886037457d47daa3d6aa24.patch",
+        "start_version": 416609,
+        "end_version": 418889
+    },
+    {
+        "comment": "Revert \"[Sema] Fix -Warray-bounds false negative when casting an out-of-bounds array item\"",
+        "rel_patch_path": "cherry/9083d0a40d980928f2f45236a4616528a7ab19ce.patch",
+        "start_version": 417894,
+        "end_version": 418289
+    },
+    {
+        "comment": "[CUDA] Normalize handling of defauled dtor.",
+        "rel_patch_path": "cherry/127091bfd5edf10495fee4724fd21c666e5d79c1.patch",
+        "start_version": 416183,
+        "end_version": 416636
+    },
+    {
+        "comment": "[Utils] collectBitParts - bail for integers > 128-bits",
+        "rel_patch_path": "cherry/455d43b951ae31dac133a8650532797f01343a36.patch",
+        "start_version": 419881,
+        "end_version": 420106
+    },
+    {
+        "comment": "[libc++] [P0879] constexpr std::sort",
+        "rel_patch_path": "cherry/493f1407927cdf6db2e08f150ed9f9b8abe4ac45.patch",
+        "start_version": 417943,
+        "end_version": 417956
+    },
+    {
+        "comment": "Disable CFI in __get_elem to allow casting a pointer to uninitialized memory",
+        "rel_patch_path": "cherry/bab74864168bb5e28ecbc0294fe1095d8da7f569.patch",
+        "start_version": 415517,
+        "end_version": 417837
+    },
+    {
+        "comment": "[libc++] Further improve the contiguous-iterator story, and fix some bugs.",
+        "rel_patch_path": "cherry/85167fb7c2920ca8874b197ef397e8e6b9d87c73.patch",
+        "start_version": 417943,
+        "end_version": 418174
+    },
+    {
+        "comment": "Restore GNU , ## __VA_ARGS__ behavior in MSVC mode",
+        "rel_patch_path": "cherry/b43c26d036dcbf7a6881f39e4434cf059364022a.patch",
+        "start_version": 416931,
+        "end_version": 417053
+    },
+    {
+        "comment": "Revert \"Suppress non-conforming GNU paste extension in all standard-conforming modes\"",
+        "rel_patch_path": "cherry/61a66e4b5ec18e9e73c2f6334f6b7f7dd4bca77e.patch",
+        "start_version": 416931,
+        "end_version": 417272
+    },
+    {
+        "comment": "[llvm-objcopy] If input=output, preserve umask bits, otherwise drop S_ISUID/S_ISGID bits",
+        "rel_patch_path": "cherry/17b4e695ce0ef89eac4a37df2df49d4c0e700766.patch",
+        "start_version": 412851,
+        "end_version": 419929
+    },
+    {
+        "comment": "[libunwind] [risc-v] This patch is for fixing immediate build failure when Cross Unwinding enabled. Follow up patch will cleanup some Macros handling.",
+        "rel_patch_path": "cherry/5c3fc5093aaf7d9422459d295eb4eb769abcbaa4.patch",
+        "start_version": 420365,
+        "end_version": 420477
+    },
+    {
+        "comment": "[GVN] do not repeat PRE on failure to split critical edge",
+        "rel_patch_path": "cherry/d36812892c16b551f058774babbc8727737f80cd.patch",
+        "start_version": 416183,
+        "end_version": 417022
+    },
+    {
+        "comment": "[clang] removes check against integral-to-pointer conversion...",
+        "rel_patch_path": "cherry/9830901b341cfb884cdef00e0335c6e3e62d107a.patch",
+        "start_version": 420025,
+        "end_version": 420692
+    },
+    {
+        "comment": "[NFCI][SimplifyCFG] Prefer to add Insert edges before Delete edges into DomTreeUpdater, if reasonable",
+        "rel_patch_path": "cherry/8e8d214c4a6c417e42996faeb9211a5c2e32111f.patch",
+        "start_version": 415439,
+        "end_version": 415620
+    },
+    {
+        "comment": "[Transforms/Utils] Use range-based for loops (NFC)",
+        "rel_patch_path": "cherry/be23012d5a84fefdb6d0a267f9ffb4bafb4804d7.patch",
+        "start_version": 415439,
+        "end_version": 418243
+    },
+    {
+        "comment": "ValueMapper: Rename RF_MoveDistinctMDs => RF_ReuseAndMutateDistinctMDs, NFC",
+        "rel_patch_path": "cherry/fa35c1f80f0ea080a7cbc581416929b0a654f25c.patch",
+        "start_version": 415439,
+        "end_version": 418586
+    },
+    {
+        "comment": "TransformUtils: Fix metadata handling in CloneModule (and improve CloneFunctionInto)",
+        "rel_patch_path": "cherry/22a52dfddcefad4f275eb8ad1cc0e200074c2d8a.patch",
+        "start_version": 415439,
+        "end_version": 419003
+    },
+    {
+        "comment": "Transforms: Clone distinct nodes in metadata mapper unless RF_ReuseAndMutateDistinctMDs",
+        "rel_patch_path": "cherry/01701646d5555409a6fad920f0e4801d79c154ea.patch",
+        "start_version": 415439,
+        "end_version": 419941
+    },
+    {
+        "comment": "Revert \"[SLP]Merge reorder and reuse shuffles.\"",
+        "rel_patch_path": "cherry/e463bd53c03ff9183bd30030477dfe6f3b2fdd0c.patch",
+        "start_version": 413046,
+        "end_version": 416430
+    },
+    {
+        "comment": "Fix chrome os failure after 021de7cf80268091cf13485a538b611b37d0b33e.",
+        "rel_patch_path": "cherry/ee8a5e4bc2c986b8e6c07e81fb58dc1e5a5c2d17.patch",
+        "start_version": 421934,
+        "end_version": 424173
+    },
+    {
+        "comment": "Fixes clang.elf calling clang.elf because direct\ncalls to clang.elf misses all environment setup in clang\nwrapper. Calls to clang wrapper instead of clang.elf binary",
+        "rel_patch_path": "llvm-11.0-invocation.patch",
+        "start_version": 420001
+    },
+    {
+        "comment": "Revert \"Reduce the number of attributes attached to each function\"",
+        "rel_patch_path": "cherry/2cb8c10342ee5d040725abb1166feb92a64c7df6.patch",
+        "start_version": 419850,
+        "end_version": 423928
+    },
+    {
+        "comment": "Revert \"[ArgPromotion] Copy additional metadata for loads.\"",
+        "rel_patch_path": "cherry/4622648a069a988d3b7b3ecd3f1b6993518d85b5.patch",
+        "start_version": 421649,
+        "end_version": 422916
+    },
+    {
+        "comment": "[clang] accept -fsanitize-ignorelist= in addition to -fsanitize-blacklist=",
+        "rel_patch_path": "cherry/d7ec48d71bd67118e7996c45e9c7fb1b09d4f59a.patch",
+        "start_version": 422132,
+        "end_version": 426368
+    },
+    {
+        "comment": "[ARM][AArch64] SLSHardening: make non-comdat thunks possible",
+        "rel_patch_path": "cherry/801ab71032e157eb7bcd38efeb6486742a7c53bb.patch",
+        "start_version": 422132,
+        "end_version": 427980
+    },
+    {
+        "comment": "[ThinLTO] Respect ClearDSOLocalOnDeclarations for unimported functions",
+        "rel_patch_path": "cherry/252a1eecc04080d852ba58c6727970c688eb1619.patch",
+        "start_version": 389603,
+        "end_version": 431743
+    },
+    {
+        "comment": "[InstCombine] fix miscompile from vector select substitution",
+        "rel_patch_path": "cherry/7bb8bfa0622b8ee55c3f748004dcf4d83d48cf97.patch",
+        "start_version": 428724,
+        "end_version": 428786
+    },
+    {
+        "comment": "[SLP]Better detection of perfect/shuffles matches for gather nodes.",
+        "rel_patch_path": "cherry/36911971a58d1ba8b15e97790ac816eaadb0603e.patch",
+        "start_version": 428724,
+        "end_version": 428883
+    },
+    {
+        "comment": "[LTO] Fix -fwhole-program-vtables handling after HIP ThinLTO patch",
+        "rel_patch_path": "cherry/d0ee8b64ecf359737ce550d8f47f465ab6657be7.patch",
+        "start_version": 428724,
+        "end_version": 429138
+    },
+    {
+        "comment": "[X86] Check destination element type before forming VTRUNCS/VTRUNCUS in combineTruncateWithSat.",
+        "rel_patch_path": "cherry/765ef4bb2af604ea2bbd6c1bffaa6e1600804c9e.patch",
+        "start_version": 428724,
+        "end_version": 429620
+    },
+    {
+        "comment": "[libcxx][atomic] Fix failure mapping in compare_exchange_{strong,weak}.",
+        "rel_patch_path": "cherry/6d33362dafb66b3af4717990d9a06450ec13f367.patch",
+        "start_version": 428724,
+        "end_version": 430140
+    },
+    {
+        "comment": "Revert \"Add workaround for false positive in -Wfree-nonheap-object\"",
+        "rel_patch_path": "cherry/0082764605cc0e7e0363a41ffa77d214c3157aa6.patch",
+        "start_version": 423544,
+        "end_version": 433358
+    },
+    {
+        "comment": "[X86] Remove incorrect use of known bits in shuffle simplification.",
+        "rel_patch_path": "cherry/6601be441974cb1b91c47ee20bf9a284076cf6dd.patch",
+        "start_version": 425001,
+        "end_version": 432955
+    },
+    {
+        "comment": "Revert \"[cmake] [compiler-rt] Call llvm_setup_rpath() when adding shared libraries.\"",
+        "rel_patch_path": "cherry/21c008d5a5b1e0c2ec3c1659cff961f4b0ccea2c.patch",
+        "start_version": 428724,
+        "end_version": 430742
+    },
+    {
+        "comment": "Revert \"Revert \"DirectoryWatcher: add an implementation for Windows\"\"",
+        "rel_patch_path": "cherry/76f1baa7875acd88bdd4b431eed6e2d2decfc0fe.patch",
+        "start_version": 428724,
+        "end_version": 429922
+    },
+    {
+        "comment": "Revert \"[lldb] Add support for evaluating expressions in static member functions\"",
+        "rel_patch_path": "cherry/4125b46232caf6a558470670f87b56ccb46d61aa.patch",
+        "start_version": 425233,
+        "end_version": 429832
+    },
+    {
+        "comment": "Revert \"3rd Reapply \"[DebugInfo] Use variadic debug values to salvage BinOps and GEP instrs with non-const operands\"\"",
+        "rel_patch_path": "cherry/386b66b2fc297cda121a3cc8a36887a6ecbcfc68.patch",
+        "start_version": 428070,
+        "end_version": 429480
+    },
+    {
+        "comment": "Revert \"[LoopUnrollAndJam] Change LoopUnrollAndJamPass to LoopNest pass\"",
+        "rel_patch_path": "cherry/0a9d0799316c7a601a0b20a123bd99922ac6455b.patch",
+        "start_version": 428636,
+        "end_version": 429323
+    },
+    {
+        "comment": "Revert \"[clang-tidy] Simplify static assert check\"",
+        "rel_patch_path": "cherry/be6b9e8ae71768d2e09ec14619ca4ecfdef553fa.patch",
+        "start_version": 428724,
+        "end_version": 428788
+    },
+    {
+        "comment": "Revert \"[clang][Parse] Add parsing support for C++ attributes on using-declarations\"",
+        "rel_patch_path": "cherry/f63adf5b67f7a25b15f81d3a1a207aba4f226dc4.patch",
+        "start_version": 428722,
+        "end_version": 428737
+    },
+    {
+        "comment": "Revert \"[libc++] NFC: Move unwrap_iter to its own header\"",
+        "rel_patch_path": "cherry/b13edf6e907b32d0b8da09dfe08fa271638eca3c.patch",
+        "start_version": 428724,
+        "end_version": 428763
+    },
+    {
+        "comment": "Revert \"[NFCI][LoopDeletion] Do not call complex analysis for known non-zero BTC\"",
+        "rel_patch_path": "cherry/dd226803c220f02a5987f0ee9f9ac3ffe2b35c09.patch",
+        "start_version": 428588,
+        "end_version": 428728
+    },
+    {
+        "comment": "Revert \"[NFC] Reuse existing variables instead of re-requesting successors\"",
+        "rel_patch_path": "cherry/807fc7cdc97fc172b4967707a7718e7333351bff.patch",
+        "start_version": 428587,
+        "end_version": 428729
+    },
+    {
+        "comment": "Revert \"[NFC] Formatting fix\"",
+        "rel_patch_path": "cherry/fd553312031c7d8085fa6ee0755a957796eadf05.patch",
+        "start_version": 428581,
+        "end_version": 428730
+    },
+    {
+        "comment": "Revert \"[NFCI][LoopDeletion] Only query SCEV about loop successor if another successor is also in loop\"",
+        "rel_patch_path": "cherry/24bd657202379595b514ee17241f019294e86bc9.patch",
+        "start_version": 428580,
+        "end_version": 428731
+    },
+    {
+        "comment": "Revert \"Return \"[LoopDeletion] Break backedge if we can prove that the loop is exited on 1st iteration\" (try 2)\"",
+        "rel_patch_path": "cherry/0159652058ca555b05db6a209fe9cf660c3bf8e6.patch",
+        "start_version": 428490,
+        "end_version": 428732
+    },
+    {
+        "comment": "Revert \"[NFC] Use ArgListEntry indirect types more in ISel lowering\"",
+        "rel_patch_path": "cherry/3a6f12f9156bcebf38965d96007bd942024c75be.patch",
+        "start_version": 427793,
+        "end_version": 428781
+    },
+    {
+        "comment": "Revert \"[TargetLowering] Only inspect attributes in the arguments for ArgListEntry\"",
+        "rel_patch_path": "cherry/71cca4f728d7421e40ec9aec0816313391fe9b59.patch",
+        "start_version": 427792,
+        "end_version": 428782
+    },
+    {
+        "comment": "Revert \"[MemCpyOpt] Allow variable lengths in memcpy optimizer\"",
+        "rel_patch_path": "revert-f5446b769a7929806f72256fccd4826d66502e59.patch",
+        "start_version": 425181
+    },
+    {
+        "comment": "[compiler-rt] [builtins] [AArch64] Add missing AArch64 data synchronization barrier (dsb) to __clear_cache",
+        "rel_patch_path": "cherry/6455418d3d2a2de1a8251cc2ccf2e87b9ae3112d.patch",
+        "start_version": 428724,
+        "end_version": 429795
+    },
+    {
+        "comment": "DebugInfo: LTO with -g inlined into -gmlt combined with Split DWARF without CU cross-references",
+        "rel_patch_path": "cherry/1b112c80a68697687189ddf5bb01b2edacb618af.patch",
+        "start_version": 428724,
+        "end_version": 431151
+    },
+    {
+        "comment": "[ELF] --fortran-common: prefer STB_WEAK to COMMON",
+        "rel_patch_path": "cherry/7de2173c2a4c45711831cfee3ccf53690c76ff07.patch",
+        "start_version": 428724,
+        "end_version": 432575
+    },
+    {
+        "comment": "[NewPM] Add CrossDSOCFI pass irrespective of LTO optimization level",
+        "rel_patch_path": "cherry/c45e17f11f508d1aea97eded3f1bda2a448f2032.patch",
+        "start_version": 428724,
+        "end_version": 433637
+    },
+    {
+        "comment": "[Unwind] Split unwind.h",
+        "rel_patch_path": "cherry/9ed1c7e4964382b95a5886279c0dfc7147a57b17.patch",
+        "start_version": 422132,
+        "end_version": 435268
+    },
+    {
+        "comment": "[Arm][Unwind][libc++abi] Add _Unwind_ForcedUnwind to EHABI.",
+        "rel_patch_path": "cherry/db126ae243cd70e4f68fd50a7c619740e90e1dc6.patch",
+        "start_version": 422132,
+        "end_version": 435269
+    },
+    {
+        "comment": "[libunwind] Compile with -Wunused-but-set-variable",
+        "rel_patch_path": "cherry/6b6d3447317673015f62206b2669c2d0a74132dc.patch",
+        "start_version": 422132,
+        "end_version": 435270
+    },
+    {
+        "comment": "libunwind: add missing break statements in EHABI",
+        "rel_patch_path": "cherry/08a5ac36b956edeb989b4a65269a829eac26a5a2.patch",
+        "start_version": 428724,
+        "end_version": 435201
+    },
+    {
+        "comment": "[MBP] findBestLoopTopHelper should exit if OldTop is not a chain header",
+        "rel_patch_path": "cherry/50b62731452cb83979bbf3c06e828d26a4698dca.patch",
+        "start_version": 422132,
+        "end_version": 434174
+    },
+    {
+        "comment": "[MC][CodeGen] Emit constant pools earlier",
+        "rel_patch_path": "cherry/ad253446208a06902d3bc4939ac7a64f8026cc84.patch",
+        "start_version": 428724,
+        "end_version": 434684
+    },
+    {
+        "comment": "PR45881: Properly use CXXThisOverride for templated lambda",
+        "rel_patch_path": "cherry/61d1cce2f83571c00f76144d42a2dea2cb3ab1ca.patch",
+        "start_version": 428724,
+        "end_version": 437403
+    },
+    {
+        "comment": "[SampleFDO] Allow forward compatibility when adding a new section for extbinary format.",
+        "rel_patch_path": "cherry/8eb617d719bdc6a4ed7773925d2421b9bbdd4b7a.patch",
+        "start_version": 428724,
+        "end_version": 437409
+    },
+    {
+        "comment": "Fixed a bug in https://reviews.llvm.org/rG8eb617d719bdc6a4ed7773925d2421b9bbdd4b7a",
+        "rel_patch_path": "cherry/e8b376547b4b77671c36607ade025d3272699e7a.patch",
+        "start_version": 428724,
+        "end_version": 438900
+    },
+    {
+        "comment": "Add REQUIRES: zlib in forward-compatible.test since it handles compressed file",
+        "rel_patch_path": "cherry/80865f7579d619dee4ffd5abb72f641ef74dedbb.patch",
+        "start_version": 428724,
+        "end_version": 438901
+    }
+]

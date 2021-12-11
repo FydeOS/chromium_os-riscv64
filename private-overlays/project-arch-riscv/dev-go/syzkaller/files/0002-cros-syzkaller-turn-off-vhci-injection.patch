@@ -1,0 +1,25 @@
+From b1b6ea59d3f772d27a65e155cb7b3d4c550ace41 Mon Sep 17 00:00:00 2001
+From: Zubin Mithra <zsm@chromium.org>
+Date: Sun, 15 Nov 2020 14:06:36 -0800
+Subject: [PATCH 2/2] cros-syzkaller:  turn off vhci injection
+
+---
+ pkg/host/features_linux.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/pkg/host/features_linux.go b/pkg/host/features_linux.go
+index 5a91fc8e..3a37b1e1 100644
+--- a/pkg/host/features_linux.go
++++ b/pkg/host/features_linux.go
+@@ -197,7 +197,7 @@ func checkVhciInjection() string {
+ 	if err := osutil.IsAccessible("/dev/vhci"); err != nil {
+ 		return err.Error()
+ 	}
+-	return ""
++	return "chromiumos: temporarily turning off vhci injection"
+ }
+ 
+ func checkDebugFS() string {
+-- 
+2.29.2.299.gdc1121823c-goog
+

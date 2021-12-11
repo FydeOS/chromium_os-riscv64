@@ -1,0 +1,37 @@
+From 3db844b2c0031cb43e83fb984285469f36ba999e Mon Sep 17 00:00:00 2001
+From: Alexandre Courbot <acourbot@chromium.org>
+Date: Thu, 10 Sep 2020 15:43:15 +0900
+Subject: [PATCH] BACKPORT: v4l2: add V4L2_CID_MPEG_VIDEO_PREPEND_SPSPPS_TO_IDR
+ control
+
+Add the upstream V4L2_CID_MPEG_VIDEO_PREPEND_SPSPPS_TO_IDR, which we
+plan on using from Chromium in replacement of our own
+V4L2_CID_MPEG_VIDEO_H264_SPS_PPS_BEFORE_IDR.
+
+This is a loose backport of commit 2c02837bd99c, removing all the HEVC
+bits we don't need.
+
+BUG=b:167992324
+TEST=emerge-kukui linux-headers
+
+Signed-off-by: Alexandre Courbot <acourbot@chromium.org>
+---
+ include/uapi/linux/v4l2-controls.h | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/include/uapi/linux/v4l2-controls.h b/include/uapi/linux/v4l2-controls.h
+index 367ec97..d3e95c9 100644
+--- a/include/uapi/linux/v4l2-controls.h
++++ b/include/uapi/linux/v4l2-controls.h
+@@ -610,6 +610,8 @@ enum v4l2_mpeg_video_vp9_profile {
+ #define V4L2_CID_MPEG_VIDEO_VP9_DECODE_PARAM		(V4L2_CID_MPEG_BASE+592)
+ #define V4L2_CID_MPEG_VIDEO_VP9_ENTROPY			(V4L2_CID_MPEG_BASE+593)
+ 
++#define V4L2_CID_MPEG_VIDEO_PREPEND_SPSPPS_TO_IDR       (V4L2_CID_MPEG_BASE + 644)
++
+ /*  MPEG-class control IDs specific to the CX2341x driver as defined by V4L2 */
+ #define V4L2_CID_MPEG_CX2341X_BASE 				(V4L2_CTRL_CLASS_MPEG | 0x1000)
+ #define V4L2_CID_MPEG_CX2341X_VIDEO_SPATIAL_FILTER_MODE 	(V4L2_CID_MPEG_CX2341X_BASE+0)
+-- 
+2.26.2
+

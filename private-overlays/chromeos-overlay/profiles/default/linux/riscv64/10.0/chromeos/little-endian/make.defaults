@@ -1,0 +1,7 @@
+USE_EXPAND_VALUES_ARCH="${USE_EXPAND_VALUES_ARCH} riscv"
+CHOST_lp64d="riscv64-cros-linux-gnu"
+CHOST_lp64="riscv64-cros-linux-gnu"
+CHOST_ilp32d="riscv32-cros-linux-gnu"
+CHOST_ilp32="riscv32-cros-linux-gnu"
+
+EXTRA_CXXFLAGS_FOR_TARGET=" -U_FORTIFY_SOURCE -D__riscv_xlen=64 -D__riscv_flen=64 -D__riscv_float_abi_double=1 -D__riscv_atomic=1"

@@ -1,0 +1,426 @@
+commit dac18474ad4a27ba9285b6ae46f7b4b3def8b433
+Author: Luis Lozano <llozano@google.com>
+Date:   Mon Aug 2 00:51:50 2021 -0700
+
+    Revert "[MemCpyOpt] Allow variable lengths in memcpy optimizer"
+    
+    This reverts commit f5446b769a7929806f72256fccd4826d66502e59.
+    
+    This was bisected to be the cause of a build failure for sqlite.
+    
+    BUG=b:194845770
+    TEST=CQ, chromiumos-sdk-next
+
+diff --git a/llvm/lib/Transforms/Scalar/MemCpyOptimizer.cpp b/llvm/lib/Transforms/Scalar/MemCpyOptimizer.cpp
+index 6cf317a1c47f..9d24afea148e 100644
+--- a/llvm/lib/Transforms/Scalar/MemCpyOptimizer.cpp
++++ b/llvm/lib/Transforms/Scalar/MemCpyOptimizer.cpp
+@@ -1057,12 +1057,10 @@ bool MemCpyOptPass::processMemCpyMemCpyDependence(MemCpyInst *M,
+ 
+   // Second, the length of the memcpy's must be the same, or the preceding one
+   // must be larger than the following one.
+-  if (MDep->getLength() != M->getLength()) {
+-    ConstantInt *MDepLen = dyn_cast<ConstantInt>(MDep->getLength());
+-    ConstantInt *MLen = dyn_cast<ConstantInt>(M->getLength());
+-    if (!MDepLen || !MLen || MDepLen->getZExtValue() < MLen->getZExtValue())
+-      return false;
+-  }
++  ConstantInt *MDepLen = dyn_cast<ConstantInt>(MDep->getLength());
++  ConstantInt *MLen = dyn_cast<ConstantInt>(M->getLength());
++  if (!MDepLen || !MLen || MDepLen->getZExtValue() < MLen->getZExtValue())
++    return false;
+ 
+   // Verify that the copied-from memory doesn't change in between the two
+   // transfers.  For example, in:
+@@ -1238,23 +1236,21 @@ bool MemCpyOptPass::processMemSetMemCpyDependence(MemCpyInst *MemCpy,
+ 
+ /// Determine whether the instruction has undefined content for the given Size,
+ /// either because it was freshly alloca'd or started its lifetime.
+-static bool hasUndefContents(Instruction *I, Value *Size) {
++static bool hasUndefContents(Instruction *I, ConstantInt *Size) {
+   if (isa<AllocaInst>(I))
+     return true;
+ 
+-  if (ConstantInt *CSize = dyn_cast<ConstantInt>(Size)) {
+-    if (IntrinsicInst *II = dyn_cast<IntrinsicInst>(I))
+-      if (II->getIntrinsicID() == Intrinsic::lifetime_start)
+-        if (ConstantInt *LTSize = dyn_cast<ConstantInt>(II->getArgOperand(0)))
+-          if (LTSize->getZExtValue() >= CSize->getZExtValue())
+-            return true;
+-  }
++  if (IntrinsicInst *II = dyn_cast<IntrinsicInst>(I))
++    if (II->getIntrinsicID() == Intrinsic::lifetime_start)
++      if (ConstantInt *LTSize = dyn_cast<ConstantInt>(II->getArgOperand(0)))
++        if (LTSize->getZExtValue() >= Size->getZExtValue())
++          return true;
+ 
+   return false;
+ }
+ 
+ static bool hasUndefContentsMSSA(MemorySSA *MSSA, AliasAnalysis *AA, Value *V,
+-                                 MemoryDef *Def, Value *Size) {
++                                 MemoryDef *Def, ConstantInt *Size) {
+   if (MSSA->isLiveOnEntryDef(Def))
+     return isa<AllocaInst>(getUnderlyingObject(V));
+ 
+@@ -1262,17 +1258,14 @@ static bool hasUndefContentsMSSA(MemorySSA *MSSA, AliasAnalysis *AA, Value *V,
+           dyn_cast_or_null<IntrinsicInst>(Def->getMemoryInst())) {
+     if (II->getIntrinsicID() == Intrinsic::lifetime_start) {
+       ConstantInt *LTSize = cast<ConstantInt>(II->getArgOperand(0));
++      if (AA->isMustAlias(V, II->getArgOperand(1)) &&
++          LTSize->getZExtValue() >= Size->getZExtValue())
++        return true;
+ 
+-      if (ConstantInt *CSize = dyn_cast<ConstantInt>(Size)) {
+-        if (AA->isMustAlias(V, II->getArgOperand(1)) &&
+-            LTSize->getZExtValue() >= CSize->getZExtValue())
+-          return true;
+-      }
+-
+-      // If the lifetime.start covers a whole alloca (as it almost always
+-      // does) and we're querying a pointer based on that alloca, then we know
+-      // the memory is definitely undef, regardless of how exactly we alias.
+-      // The size also doesn't matter, as an out-of-bounds access would be UB.
++      // If the lifetime.start covers a whole alloca (as it almost always does)
++      // and we're querying a pointer based on that alloca, then we know the
++      // memory is definitely undef, regardless of how exactly we alias. The
++      // size also doesn't matter, as an out-of-bounds access would be UB.
+       AllocaInst *Alloca = dyn_cast<AllocaInst>(getUnderlyingObject(V));
+       if (getUnderlyingObject(II->getArgOperand(1)) == Alloca) {
+         DataLayout DL = Alloca->getModule()->getDataLayout();
+@@ -1298,6 +1291,8 @@ static bool hasUndefContentsMSSA(MemorySSA *MSSA, AliasAnalysis *AA, Value *V,
+ ///   memset(dst2, c, dst2_size);
+ /// \endcode
+ /// When dst2_size <= dst1_size.
++///
++/// The \p MemCpy must have a Constant length.
+ bool MemCpyOptPass::performMemCpyToMemSetOptzn(MemCpyInst *MemCpy,
+                                                MemSetInst *MemSet) {
+   // Make sure that memcpy(..., memset(...), ...), that is we are memsetting and
+@@ -1305,47 +1300,38 @@ bool MemCpyOptPass::performMemCpyToMemSetOptzn(MemCpyInst *MemCpy,
+   if (!AA->isMustAlias(MemSet->getRawDest(), MemCpy->getRawSource()))
+     return false;
+ 
+-  Value *MemSetSize = MemSet->getLength();
+-  Value *CopySize = MemCpy->getLength();
+-
+-  if (MemSetSize != CopySize) {
+-    // Make sure the memcpy doesn't read any more than what the memset wrote.
+-    // Don't worry about sizes larger than i64.
+-
+-    // A known memset size is required.
+-    ConstantInt *CMemSetSize = dyn_cast<ConstantInt>(MemSetSize);
+-    if (!CMemSetSize)
+-      return false;
++  // A known memset size is required.
++  ConstantInt *MemSetSize = dyn_cast<ConstantInt>(MemSet->getLength());
++  if (!MemSetSize)
++    return false;
+ 
+-    // A known memcpy size is also required.
+-    ConstantInt *CCopySize = dyn_cast<ConstantInt>(CopySize);
+-    if (!CCopySize)
+-      return false;
+-    if (CCopySize->getZExtValue() > CMemSetSize->getZExtValue()) {
+-      // If the memcpy is larger than the memset, but the memory was undef prior
+-      // to the memset, we can just ignore the tail. Technically we're only
+-      // interested in the bytes from MemSetSize..CopySize here, but as we can't
+-      // easily represent this location, we use the full 0..CopySize range.
+-      MemoryLocation MemCpyLoc = MemoryLocation::getForSource(MemCpy);
+-      bool CanReduceSize = false;
+-      if (EnableMemorySSA) {
+-        MemoryUseOrDef *MemSetAccess = MSSA->getMemoryAccess(MemSet);
+-        MemoryAccess *Clobber = MSSA->getWalker()->getClobberingMemoryAccess(
+-            MemSetAccess->getDefiningAccess(), MemCpyLoc);
+-        if (auto *MD = dyn_cast<MemoryDef>(Clobber))
+-          if (hasUndefContentsMSSA(MSSA, AA, MemCpy->getSource(), MD, CopySize))
+-            CanReduceSize = true;
+-      } else {
+-        MemDepResult DepInfo = MD->getPointerDependencyFrom(
+-            MemCpyLoc, true, MemSet->getIterator(), MemSet->getParent());
+-        if (DepInfo.isDef() && hasUndefContents(DepInfo.getInst(), CopySize))
++  // Make sure the memcpy doesn't read any more than what the memset wrote.
++  // Don't worry about sizes larger than i64.
++  ConstantInt *CopySize = cast<ConstantInt>(MemCpy->getLength());
++  if (CopySize->getZExtValue() > MemSetSize->getZExtValue()) {
++    // If the memcpy is larger than the memset, but the memory was undef prior
++    // to the memset, we can just ignore the tail. Technically we're only
++    // interested in the bytes from MemSetSize..CopySize here, but as we can't
++    // easily represent this location, we use the full 0..CopySize range.
++    MemoryLocation MemCpyLoc = MemoryLocation::getForSource(MemCpy);
++    bool CanReduceSize = false;
++    if (EnableMemorySSA) {
++      MemoryUseOrDef *MemSetAccess = MSSA->getMemoryAccess(MemSet);
++      MemoryAccess *Clobber = MSSA->getWalker()->getClobberingMemoryAccess(
++          MemSetAccess->getDefiningAccess(), MemCpyLoc);
++      if (auto *MD = dyn_cast<MemoryDef>(Clobber))
++        if (hasUndefContentsMSSA(MSSA, AA, MemCpy->getSource(), MD, CopySize))
+           CanReduceSize = true;
+-      }
+-
+-      if (!CanReduceSize)
+-        return false;
+-      CopySize = MemSetSize;
++    } else {
++      MemDepResult DepInfo = MD->getPointerDependencyFrom(
++          MemCpyLoc, true, MemSet->getIterator(), MemSet->getParent());
++      if (DepInfo.isDef() && hasUndefContents(DepInfo.getInst(), CopySize))
++        CanReduceSize = true;
+     }
++
++    if (!CanReduceSize)
++      return false;
++    CopySize = MemSetSize;
+   }
+ 
+   IRBuilder<> Builder(MemCpy);
+@@ -1417,6 +1403,10 @@ bool MemCpyOptPass::processMemCpy(MemCpyInst *M, BasicBlock::iterator &BBI) {
+           if (processMemSetMemCpyDependence(M, MDep))
+             return true;
+ 
++    // The optimizations after this point require the memcpy size.
++    ConstantInt *CopySize = dyn_cast<ConstantInt>(M->getLength());
++    if (!CopySize) return false;
++
+     MemoryAccess *SrcClobber = MSSA->getWalker()->getClobberingMemoryAccess(
+         AnyClobber, MemoryLocation::getForSource(M));
+ 
+@@ -1429,29 +1419,26 @@ bool MemCpyOptPass::processMemCpy(MemCpyInst *M, BasicBlock::iterator &BBI) {
+     //   d) memcpy from a just-memset'd source can be turned into memset.
+     if (auto *MD = dyn_cast<MemoryDef>(SrcClobber)) {
+       if (Instruction *MI = MD->getMemoryInst()) {
+-        if (ConstantInt *CopySize = dyn_cast<ConstantInt>(M->getLength())) {
+-          if (auto *C = dyn_cast<CallInst>(MI)) {
+-            // The memcpy must post-dom the call. Limit to the same block for
+-            // now. Additionally, we need to ensure that there are no accesses
+-            // to dest between the call and the memcpy. Accesses to src will be
+-            // checked by performCallSlotOptzn().
+-            // TODO: Support non-local call-slot optimization?
+-            if (C->getParent() == M->getParent() &&
+-                !accessedBetween(*AA, DestLoc, MD, MA)) {
+-              // FIXME: Can we pass in either of dest/src alignment here instead
+-              // of conservatively taking the minimum?
+-              Align Alignment = std::min(M->getDestAlign().valueOrOne(),
+-                                         M->getSourceAlign().valueOrOne());
+-              if (performCallSlotOptzn(M, M, M->getDest(), M->getSource(),
+-                                       CopySize->getZExtValue(), Alignment,
+-                                       C)) {
+-                LLVM_DEBUG(dbgs() << "Performed call slot optimization:\n"
+-                                  << "    call: " << *C << "\n"
+-                                  << "    memcpy: " << *M << "\n");
+-                eraseInstruction(M);
+-                ++NumMemCpyInstr;
+-                return true;
+-              }
++        if (auto *C = dyn_cast<CallInst>(MI)) {
++          // The memcpy must post-dom the call. Limit to the same block for now.
++          // Additionally, we need to ensure that there are no accesses to dest
++          // between the call and the memcpy. Accesses to src will be checked
++          // by performCallSlotOptzn().
++          // TODO: Support non-local call-slot optimization?
++          if (C->getParent() == M->getParent() &&
++              !accessedBetween(*AA, DestLoc, MD, MA)) {
++            // FIXME: Can we pass in either of dest/src alignment here instead
++            // of conservatively taking the minimum?
++            Align Alignment = std::min(M->getDestAlign().valueOrOne(),
++                                       M->getSourceAlign().valueOrOne());
++            if (performCallSlotOptzn(M, M, M->getDest(), M->getSource(),
++                                     CopySize->getZExtValue(), Alignment, C)) {
++              LLVM_DEBUG(dbgs() << "Performed call slot optimization:\n"
++                                << "    call: " << *C << "\n"
++                                << "    memcpy: " << *M << "\n");
++              eraseInstruction(M);
++              ++NumMemCpyInstr;
++              return true;
+             }
+           }
+         }
+@@ -1467,7 +1454,7 @@ bool MemCpyOptPass::processMemCpy(MemCpyInst *M, BasicBlock::iterator &BBI) {
+         }
+       }
+ 
+-      if (hasUndefContentsMSSA(MSSA, AA, M->getSource(), MD, M->getLength())) {
++      if (hasUndefContentsMSSA(MSSA, AA, M->getSource(), MD, CopySize)) {
+         LLVM_DEBUG(dbgs() << "Removed memcpy from undef\n");
+         eraseInstruction(M);
+         ++NumMemCpyInstr;
+@@ -1484,6 +1471,10 @@ bool MemCpyOptPass::processMemCpy(MemCpyInst *M, BasicBlock::iterator &BBI) {
+         if (processMemSetMemCpyDependence(M, MDep))
+           return true;
+ 
++    // The optimizations after this point require the memcpy size.
++    ConstantInt *CopySize = dyn_cast<ConstantInt>(M->getLength());
++    if (!CopySize) return false;
++
+     // There are four possible optimizations we can do for memcpy:
+     //   a) memcpy-memcpy xform which exposes redundance for DSE.
+     //   b) call-memcpy xform for return slot optimization.
+@@ -1491,19 +1482,17 @@ bool MemCpyOptPass::processMemCpy(MemCpyInst *M, BasicBlock::iterator &BBI) {
+     //      its lifetime copies undefined data, and we can therefore eliminate
+     //      the memcpy in favor of the data that was already at the destination.
+     //   d) memcpy from a just-memset'd source can be turned into memset.
+-    if (ConstantInt *CopySize = dyn_cast<ConstantInt>(M->getLength())) {
+-      if (DepInfo.isClobber()) {
+-        if (CallInst *C = dyn_cast<CallInst>(DepInfo.getInst())) {
+-          // FIXME: Can we pass in either of dest/src alignment here instead
+-          // of conservatively taking the minimum?
+-          Align Alignment = std::min(M->getDestAlign().valueOrOne(),
+-                                     M->getSourceAlign().valueOrOne());
+-          if (performCallSlotOptzn(M, M, M->getDest(), M->getSource(),
+-                                   CopySize->getZExtValue(), Alignment, C)) {
+-            eraseInstruction(M);
+-            ++NumMemCpyInstr;
+-            return true;
+-          }
++    if (DepInfo.isClobber()) {
++      if (CallInst *C = dyn_cast<CallInst>(DepInfo.getInst())) {
++        // FIXME: Can we pass in either of dest/src alignment here instead
++        // of conservatively taking the minimum?
++        Align Alignment = std::min(M->getDestAlign().valueOrOne(),
++                                   M->getSourceAlign().valueOrOne());
++        if (performCallSlotOptzn(M, M, M->getDest(), M->getSource(),
++                                 CopySize->getZExtValue(), Alignment, C)) {
++          eraseInstruction(M);
++          ++NumMemCpyInstr;
++          return true;
+         }
+       }
+     }
+@@ -1516,7 +1505,7 @@ bool MemCpyOptPass::processMemCpy(MemCpyInst *M, BasicBlock::iterator &BBI) {
+       if (MemCpyInst *MDep = dyn_cast<MemCpyInst>(SrcDepInfo.getInst()))
+         return processMemCpyMemCpyDependence(M, MDep);
+     } else if (SrcDepInfo.isDef()) {
+-      if (hasUndefContents(SrcDepInfo.getInst(), M->getLength())) {
++      if (hasUndefContents(SrcDepInfo.getInst(), CopySize)) {
+         eraseInstruction(M);
+         ++NumMemCpyInstr;
+         return true;
+diff --git a/llvm/test/Transforms/MemCpyOpt/variable-sized-memcpy-memcpy.ll b/llvm/test/Transforms/MemCpyOpt/variable-sized-memcpy-memcpy.ll
+deleted file mode 100644
+index 0006c4c1d68f..000000000000
+--- a/llvm/test/Transforms/MemCpyOpt/variable-sized-memcpy-memcpy.ll
++++ /dev/null
+@@ -1,39 +0,0 @@
+-; NOTE: Assertions have been autogenerated by utils/update_test_checks.py
+-; RUN: opt < %s -memcpyopt -S -enable-memcpyopt-memoryssa=0 | FileCheck %s
+-; RUN: opt < %s -memcpyopt -S -enable-memcpyopt-memoryssa=1 -verify-memoryssa | FileCheck %s
+-target datalayout = "e-m:e-i64:64-f80:128-n8:16:32:64-S128"
+-
+-define void @test(i8* %src, i64 %size) {
+-; CHECK-LABEL: @test(
+-; CHECK-NEXT:    [[TMP:%.*]] = alloca i8, i64 [[SIZE:%.*]], align 1
+-; CHECK-NEXT:    [[DST:%.*]] = alloca i8, i64 [[SIZE]], align 1
+-; CHECK-NEXT:    call void @llvm.memcpy.p0i8.p0i8.i64(i8* align 8 [[TMP]], i8* align 8 [[SRC:%.*]], i64 [[SIZE]], i1 false)
+-; CHECK-NEXT:    call void @llvm.memcpy.p0i8.p0i8.i64(i8* align 8 [[DST]], i8* align 8 [[SRC]], i64 [[SIZE]], i1 false)
+-; CHECK-NEXT:    ret void
+-;
+-  %tmp = alloca i8, i64 %size
+-  %dst = alloca i8, i64 %size
+-  call void @llvm.memcpy.p0i8.p0i8.i64(i8* align 8 %tmp, i8* align 8 %src, i64 %size, i1 false)
+-  call void @llvm.memcpy.p0i8.p0i8.i64(i8* align 8 %dst, i8* align 8 %tmp, i64 %size, i1 false)
+-
+-  ret void
+-}
+-
+-; Differing sizes, so left as it is.
+-define void @negative_test(i8* %src, i64 %size1, i64 %size2) {
+-; CHECK-LABEL: @negative_test(
+-; CHECK-NEXT:    [[TMP:%.*]] = alloca i8, i64 [[SIZE1:%.*]], align 1
+-; CHECK-NEXT:    [[DST:%.*]] = alloca i8, i64 [[SIZE2:%.*]], align 1
+-; CHECK-NEXT:    call void @llvm.memcpy.p0i8.p0i8.i64(i8* align 8 [[TMP]], i8* align 8 [[SRC:%.*]], i64 [[SIZE1]], i1 false)
+-; CHECK-NEXT:    call void @llvm.memcpy.p0i8.p0i8.i64(i8* align 8 [[DST]], i8* align 8 [[TMP]], i64 [[SIZE2]], i1 false)
+-; CHECK-NEXT:    ret void
+-;
+-  %tmp = alloca i8, i64 %size1
+-  %dst = alloca i8, i64 %size2
+-  call void @llvm.memcpy.p0i8.p0i8.i64(i8* align 8 %tmp, i8* align 8 %src, i64 %size1, i1 false)
+-  call void @llvm.memcpy.p0i8.p0i8.i64(i8* align 8 %dst, i8* align 8 %tmp, i64 %size2, i1 false)
+-
+-  ret void
+-}
+-
+-declare void @llvm.memcpy.p0i8.p0i8.i64(i8*, i8*, i64, i1)
+diff --git a/llvm/test/Transforms/MemCpyOpt/variable-sized-memcpy-uninit.ll b/llvm/test/Transforms/MemCpyOpt/variable-sized-memcpy-uninit.ll
+deleted file mode 100644
+index ed1028f7b9d7..000000000000
+--- a/llvm/test/Transforms/MemCpyOpt/variable-sized-memcpy-uninit.ll
++++ /dev/null
+@@ -1,32 +0,0 @@
+-; NOTE: Assertions have been autogenerated by utils/update_test_checks.py
+-; RUN: opt < %s -memcpyopt -S -enable-memcpyopt-memoryssa=0 | FileCheck %s
+-; RUN: opt < %s -memcpyopt -S -enable-memcpyopt-memoryssa=1 -verify-memoryssa | FileCheck %s
+-target datalayout = "e-m:e-i64:64-f80:128-n8:16:32:64-S128"
+-
+-define void @test(i64 %size) {
+-; CHECK-LABEL: @test(
+-; CHECK-NEXT:    [[SRC:%.*]] = alloca i8, i64 [[SIZE:%.*]], align 1
+-; CHECK-NEXT:    [[DST:%.*]] = alloca i8, i64 [[SIZE]], align 1
+-; CHECK-NEXT:    ret void
+-;
+-  %src = alloca i8, i64 %size
+-  %dst = alloca i8, i64 %size
+-  call void @llvm.memcpy.p0i8.p0i8.i64(i8* align 8 %dst, i8* align 8 %src, i64 %size, i1 false)
+-
+-  ret void
+-}
+-
+-define void @test2(i64 %size1, i64 %size2, i64 %cpy_size) {
+-; CHECK-LABEL: @test2(
+-; CHECK-NEXT:    [[SRC:%.*]] = alloca i8, i64 [[SIZE1:%.*]], align 1
+-; CHECK-NEXT:    [[DST:%.*]] = alloca i8, i64 [[SIZE2:%.*]], align 1
+-; CHECK-NEXT:    ret void
+-;
+-  %src = alloca i8, i64 %size1
+-  %dst = alloca i8, i64 %size2
+-  call void @llvm.memcpy.p0i8.p0i8.i64(i8* align 8 %dst, i8* align 8 %src, i64 %cpy_size, i1 false)
+-
+-  ret void
+-}
+-
+-declare void @llvm.memcpy.p0i8.p0i8.i64(i8*, i8*, i64, i1)
+diff --git a/llvm/test/Transforms/MemCpyOpt/variable-sized-memset-memcpy.ll b/llvm/test/Transforms/MemCpyOpt/variable-sized-memset-memcpy.ll
+deleted file mode 100644
+index e80bab819fe2..000000000000
+--- a/llvm/test/Transforms/MemCpyOpt/variable-sized-memset-memcpy.ll
++++ /dev/null
+@@ -1,40 +0,0 @@
+-; NOTE: Assertions have been autogenerated by utils/update_test_checks.py
+-; RUN: opt < %s -memcpyopt -S -enable-memcpyopt-memoryssa=0 | FileCheck %s
+-; RUN: opt < %s -memcpyopt -S -enable-memcpyopt-memoryssa=1 -verify-memoryssa | FileCheck %s
+-target datalayout = "e-m:e-i64:64-f80:128-n8:16:32:64-S128"
+-
+-define void @test(i8* %src, i8 %c, i64 %size) {
+-; CHECK-LABEL: @test(
+-; CHECK-NEXT:    [[DST1:%.*]] = alloca i8, i64 [[SIZE:%.*]], align 1
+-; CHECK-NEXT:    [[DST2:%.*]] = alloca i8, i64 [[SIZE]], align 1
+-; CHECK-NEXT:    call void @llvm.memset.p0i8.i64(i8* align 8 [[DST1]], i8 [[C:%.*]], i64 [[SIZE]], i1 false)
+-; CHECK-NEXT:    call void @llvm.memset.p0i8.i64(i8* align 8 [[DST2]], i8 [[C]], i64 [[SIZE]], i1 false)
+-; CHECK-NEXT:    ret void
+-;
+-  %dst1 = alloca i8, i64 %size
+-  %dst2 = alloca i8, i64 %size
+-  call void @llvm.memset.p0i8.i64(i8* align 8 %dst1, i8 %c, i64 %size, i1 false)
+-  call void @llvm.memcpy.p0i8.p0i8.i64(i8* align 8 %dst2, i8* align 8 %dst1, i64 %size, i1 false)
+-
+-  ret void
+-}
+-
+-; Differing sizes, so left as it is.
+-define void @negative_test(i8* %src, i8 %c, i64 %size1, i64 %size2) {
+-; CHECK-LABEL: @negative_test(
+-; CHECK-NEXT:    [[DST1:%.*]] = alloca i8, i64 [[SIZE1:%.*]], align 1
+-; CHECK-NEXT:    [[DST2:%.*]] = alloca i8, i64 [[SIZE2:%.*]], align 1
+-; CHECK-NEXT:    call void @llvm.memset.p0i8.i64(i8* align 8 [[DST1]], i8 [[C:%.*]], i64 [[SIZE1]], i1 false)
+-; CHECK-NEXT:    call void @llvm.memcpy.p0i8.p0i8.i64(i8* align 8 [[DST2]], i8* align 8 [[DST1]], i64 [[SIZE2]], i1 false)
+-; CHECK-NEXT:    ret void
+-;
+-  %dst1 = alloca i8, i64 %size1
+-  %dst2 = alloca i8, i64 %size2
+-  call void @llvm.memset.p0i8.i64(i8* align 8 %dst1, i8 %c, i64 %size1, i1 false)
+-  call void @llvm.memcpy.p0i8.p0i8.i64(i8* align 8 %dst2, i8* align 8 %dst1, i64 %size2, i1 false)
+-
+-  ret void
+-}
+-
+-declare void @llvm.memset.p0i8.i64(i8*, i8, i64, i1)
+-declare void @llvm.memcpy.p0i8.p0i8.i64(i8*, i8*, i64, i1)

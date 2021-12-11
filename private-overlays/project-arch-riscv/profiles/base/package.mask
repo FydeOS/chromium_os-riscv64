@@ -1,0 +1,1 @@
+sys-libs/ncurses::portage-stable

@@ -1,0 +1,26 @@
+--- a/sysdeps/riscv/dl-machine.h	2021-12-03 12:59:02.668161199 +0800
++++ b/sysdeps/riscv/dl-machine.h	2021-12-03 12:58:51.712359294 +0800
+@@ -52,6 +52,7 @@
+ 
+ #define ELF_MACHINE_NO_REL 1
+ #define ELF_MACHINE_NO_RELA 0
++#define ELF_MACHINE_NO_RELR 1
+ 
+ /* Return nonzero iff ELF header is compatible with the running host.  */
+ static inline int __attribute_used__
+@@ -272,6 +273,15 @@
+ }
+ 
+ auto inline void
++__attribute__ ((always_inline))
++elf_machine_relr_relative (ElfW(Addr) l_addr,
++			   void *const reloc_addr_arg)
++{
++  ElfW(Addr) *const reloc_addr = reloc_addr_arg;
++  *reloc_addr += l_addr;
++}
++
++auto inline void
+ __attribute__ ((always_inline))
+ elf_machine_lazy_rel (struct link_map *map, ElfW(Addr) l_addr,
+ 		      const ElfW(Rela) *reloc, int skip_ifunc)

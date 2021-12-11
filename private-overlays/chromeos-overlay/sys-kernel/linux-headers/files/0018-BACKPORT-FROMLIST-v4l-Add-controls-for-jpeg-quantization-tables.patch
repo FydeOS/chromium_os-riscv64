@@ -1,0 +1,35 @@
+From e39df3c673f8e8bfa359fca6712832cdc2a2dc31 Mon Sep 17 00:00:00 2001
+From: Shunqian Zheng <zhengsq@rock-chips.com>
+Date: Sat, 24 Feb 2018 11:10:36 +0800
+Subject: [PATCH] BACKPORT: FROMLIST: media: Add controls for jpeg quantization tables
+
+Add V4L2_CID_JPEG_LUMA/CHROMA_QUANTIZATION controls to allow userspace
+configure the JPEG quantization tables.
+
+Signed-off-by: Shunqian Zheng <zhengsq@rock-chips.com>
+Signed-off-by: Ezequiel Garcia <ezequiel@collabora.com>
+
+(am from https://patchwork.linuxtv.org/patch/51341/)
+Skip /Documentation/media/uapi/v4l/extended-controls.rst
+
+BUG=none
+TEST=none
+
+Signed-off-by: Moja Hsu <mojahsu@chromium.org>
+Change-Id: I32596278311e80bc5f7f15b69913707d2c49c98c
+---
+
+diff --git a/include/uapi/linux/v4l2-controls.h b/include/uapi/linux/v4l2-controls.h
+index 719ff13..5fe245b 100644
+--- a/include/uapi/linux/v4l2-controls.h
++++ b/include/uapi/linux/v4l2-controls.h
+@@ -882,6 +882,9 @@
+ #define	V4L2_JPEG_ACTIVE_MARKER_DQT		(1 << 17)
+ #define	V4L2_JPEG_ACTIVE_MARKER_DHT		(1 << 18)
+
++#define V4L2_CID_JPEG_LUMA_QUANTIZATION	(V4L2_CID_JPEG_CLASS_BASE + 5)
++#define V4L2_CID_JPEG_CHROMA_QUANTIZATION	(V4L2_CID_JPEG_CLASS_BASE + 6)
++
+
+ /* Image source controls */
+ #define V4L2_CID_IMAGE_SOURCE_CLASS_BASE	(V4L2_CTRL_CLASS_IMAGE_SOURCE | 0x900)

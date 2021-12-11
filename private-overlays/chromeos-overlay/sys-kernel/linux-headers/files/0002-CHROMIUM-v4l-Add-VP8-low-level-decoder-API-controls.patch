@@ -1,0 +1,204 @@
+From 30872038a445eb4993ffe6b84afbbd6da4441cf6 Mon Sep 17 00:00:00 2001
+From: Pawel Osciak <posciak@chromium.org>
+Date: Fri, 26 Dec 2014 10:37:33 +0900
+Subject: [PATCH] CHROMIUM: v4l: Add VP8 low-level decoder API controls.
+
+These controls are to be used with the new low-level decoder API for VP8
+to provide additional parameters for the hardware that cannot parse the
+input stream.
+
+They are a part of the legacy downstream stateless VP8 decoder UAPI used
+only by Chromium and will be removed as soon as Chromium migrates fully
+to the upstream UAPI.
+
+BUG=chrome-os-partner:33728
+
+[fbuergisser@chromium.org: original patch modified as h264 headers were moved
+ to other header files which cause a failure when applying the original patch.
+ Keeping part of the original patch for context.]
+
+[tfiga@chromium.org: Move to a separate file to allow legacy and
+ upstream UAPIs to co-exist.]
+
+Change-Id: I71f6865a18cfe7f2ab7980c40d3c3e1d3c25a51a
+---
+ include/uapi/linux/media/vp8-ctrls-legacy.h | 144 ++++++++++++++++++++
+ include/uapi/linux/videodev2.h              |   2 +
+ 2 files changed, 146 insertions(+)
+ create mode 100644 include/uapi/linux/media/vp8-ctrls-legacy.h
+
+diff --git a/include/uapi/linux/media/vp8-ctrls-legacy.h b/include/uapi/linux/media/vp8-ctrls-legacy.h
+new file mode 100644
+index 000000000000..9713ffe81ad2
+--- /dev/null
++++ b/include/uapi/linux/media/vp8-ctrls-legacy.h
+@@ -0,0 +1,146 @@
++/* SPDX-License-Identifier: ((GPL-2.0+ WITH Linux-syscall-note) OR BSD-3-Clause) */
++/*
++ *  Video for Linux Two controls header file
++ *
++ *  Copyright (C) 1999-2012 the contributors
++ *
++ *  This program is free software; you can redistribute it and/or modify
++ *  it under the terms of the GNU General Public License as published by
++ *  the Free Software Foundation; either version 2 of the License, or
++ *  (at your option) any later version.
++ *
++ *  This program is distributed in the hope that it will be useful,
++ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
++ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ *  GNU General Public License for more details.
++ *
++ *  Alternatively you can redistribute this file under the terms of the
++ *  BSD license as stated below:
++ *
++ *  Redistribution and use in source and binary forms, with or without
++ *  modification, are permitted provided that the following conditions
++ *  are met:
++ *  1. Redistributions of source code must retain the above copyright
++ *     notice, this list of conditions and the following disclaimer.
++ *  2. Redistributions in binary form must reproduce the above copyright
++ *     notice, this list of conditions and the following disclaimer in
++ *     the documentation and/or other materials provided with the
++ *     distribution.
++ *  3. The names of its contributors may not be used to endorse or promote
++ *     products derived from this software without specific prior written
++ *     permission.
++ *
++ *  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
++ *  "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
++ *  LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
++ *  A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
++ *  OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
++ *  SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
++ *  TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
++ *  PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
++ *  LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
++ *  NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
++ *  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++ */
++
++#ifndef __LINUX_MEDIA_VP8_CTRLS_LEGACY_H
++#define __LINUX_MEDIA_VP8_CTRLS_LEGACY_H
++
++#include <linux/videodev2.h>
++
++/* Control IDs not existing in upstream */
++#define V4L2_CID_MPEG_VIDEO_VP8_FRAME_HDR		(V4L2_CID_MPEG_BASE+590)
++
++#define V4L2_VP8_SEGMNT_HDR_FLAG_ENABLED              0x01
++#define V4L2_VP8_SEGMNT_HDR_FLAG_UPDATE_MAP           0x02
++#define V4L2_VP8_SEGMNT_HDR_FLAG_UPDATE_FEATURE_DATA  0x04
++struct v4l2_vp8_sgmnt_hdr {
++	__u8 segment_feature_mode;
++
++	__s8 quant_update[4];
++	__s8 lf_update[4];
++	__u8 segment_probs[3];
++
++	__u8 flags;
++};
++
++#define V4L2_VP8_LF_HDR_ADJ_ENABLE	0x01
++#define V4L2_VP8_LF_HDR_DELTA_UPDATE	0x02
++struct v4l2_vp8_loopfilter_hdr {
++	__u8 type;
++	__u8 level;
++	__u8 sharpness_level;
++	__s8 ref_frm_delta_magnitude[4];
++	__s8 mb_mode_delta_magnitude[4];
++
++	__u8 flags;
++};
++
++struct v4l2_vp8_quantization_hdr {
++	__u8 y_ac_qi;
++	__s8 y_dc_delta;
++	__s8 y2_dc_delta;
++	__s8 y2_ac_delta;
++	__s8 uv_dc_delta;
++	__s8 uv_ac_delta;
++	__u16 dequant_factors[4][3][2];
++};
++
++struct v4l2_vp8_entropy_hdr {
++	__u8 coeff_probs[4][8][3][11];
++	__u8 y_mode_probs[4];
++	__u8 uv_mode_probs[3];
++	__u8 mv_probs[2][19];
++};
++
++#define V4L2_VP8_FRAME_HDR_FLAG_EXPERIMENTAL		0x01
++#define V4L2_VP8_FRAME_HDR_FLAG_SHOW_FRAME		0x02
++#define V4L2_VP8_FRAME_HDR_FLAG_MB_NO_SKIP_COEFF	0x04
++struct v4l2_ctrl_vp8_frame_hdr {
++	/* 0: keyframe, 1: not a keyframe */
++	__u8 key_frame;
++	__u8 version;
++
++	/* Populated also if not a key frame */
++	__u16 width;
++	__u8 horizontal_scale;
++	__u16 height;
++	__u8 vertical_scale;
++
++	struct v4l2_vp8_sgmnt_hdr sgmnt_hdr;
++	struct v4l2_vp8_loopfilter_hdr lf_hdr;
++	struct v4l2_vp8_quantization_hdr quant_hdr;
++	struct v4l2_vp8_entropy_hdr entropy_hdr;
++
++	__u8 sign_bias_golden;
++	__u8 sign_bias_alternate;
++
++	__u8 prob_skip_false;
++	__u8 prob_intra;
++	__u8 prob_last;
++	__u8 prob_gf;
++
++	__u32 first_part_size;
++	__u32 first_part_offset;
++	/*
++	 * Offset in bits of MB data in first partition,
++	 * i.e. bit offset starting from first_part_offset.
++	 */
++	__u32 macroblock_bit_offset;
++
++	__u8 num_dct_parts;
++	__u32 dct_part_sizes[8];
++
++	__u8 bool_dec_range;
++	__u8 bool_dec_value;
++	__u8 bool_dec_count;
++
++	/* v4l2_buffer indices of reference frames */
++	__u32 last_frame;
++	__u32 golden_frame;
++	__u32 alt_frame;
++
++	__u8 flags;
++};
++
++#endif
+diff --git a/include/uapi/linux/videodev2.h b/include/uapi/linux/videodev2.h
+index c2c9e44e70a7..41e080891916 100644
+--- a/include/uapi/linux/videodev2.h
++++ b/include/uapi/linux/videodev2.h
+@@ -66,6 +66,7 @@
+ #include <linux/v4l2-common.h>
+ #include <linux/v4l2-controls.h>
+ #include <linux/media/h264-ctrls-legacy.h>
++#include <linux/media/vp8-ctrls-legacy.h>
+ 
+ /*
+  * Common stuff for both V4L1 and V4L2
+@@ -636,6 +637,7 @@ struct v4l2_pix_format {
+ #define V4L2_PIX_FMT_VC1_ANNEX_G v4l2_fourcc('V', 'C', '1', 'G') /* SMPTE 421M Annex G compliant stream */
+ #define V4L2_PIX_FMT_VC1_ANNEX_L v4l2_fourcc('V', 'C', '1', 'L') /* SMPTE 421M Annex L compliant stream */
+ #define V4L2_PIX_FMT_VP8      v4l2_fourcc('V', 'P', '8', '0') /* VP8 */
++#define V4L2_PIX_FMT_VP8_FRAME v4l2_fourcc('V', 'P', '8', 'F') /* VP8 parsed frames */
+ #define V4L2_PIX_FMT_VP9      v4l2_fourcc('V', 'P', '9', '0') /* VP9 */
+ 
+ /*  Vendor-specific formats   */
+-- 
+2.22.0.709.g102302147b-goog
+

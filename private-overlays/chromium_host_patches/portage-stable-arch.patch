@@ -1,0 +1,9 @@
+diff --git a/profiles/arch.list b/profiles/arch.list
+index e4787c02f..8c54ec31a 100644
+--- a/profiles/arch.list
++++ b/profiles/arch.list
+@@ -43,3 +43,4 @@ x64-solaris
+ x86-solaris
+ x86-winnt
+ x86-cygwin
++riscv

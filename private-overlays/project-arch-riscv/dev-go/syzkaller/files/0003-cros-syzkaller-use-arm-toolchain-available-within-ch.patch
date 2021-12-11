@@ -1,0 +1,50 @@
+diff --git a/sys/targets/targets.go b/sys/targets/targets.go
+index dd3977795..37ae9fc76 100644
+--- a/sys/targets/targets.go
++++ b/sys/targets/targets.go
+@@ -245,7 +245,7 @@ var List = map[string]map[string]*Target{
+ 			PtrSize:          8,
+ 			PageSize:         4 << 10,
+ 			LittleEndian:     true,
+-			Triple:           "aarch64-linux-gnu",
++			Triple:           "aarch64-cros-linux-gnu",
+ 			KernelArch:       "arm64",
+ 			KernelHeaderArch: "arm64",
+ 		},
+@@ -254,8 +254,8 @@ var List = map[string]map[string]*Target{
+ 			PtrSize:          4,
+ 			PageSize:         4 << 10,
+ 			LittleEndian:     true,
+-			CFlags:           []string{"-D__LINUX_ARM_ARCH__=6", "-march=armv6"},
+-			Triple:           "arm-linux-gnueabi",
++			CFlags:           []string{"-D__LINUX_ARM_ARCH__=6", "-march=armv8-a+crc"},
++			Triple:           "armv7a-cros-linux-gnueabihf",
+ 			KernelArch:       "arm",
+ 			KernelHeaderArch: "arm",
+ 		},
+@@ -297,7 +297,7 @@ var List = map[string]map[string]*Target{
+ 			PtrSize:          8,
+ 			PageSize:         4 << 10,
+ 			LittleEndian:     true,
+-			Triple:           "riscv64-linux-gnu",
++			Triple:           "riscv64-cros-linux-gnu",
+ 			KernelArch:       "riscv",
+ 			KernelHeaderArch: "riscv",
+ 		},
+@@ -723,6 +723,16 @@ func (target *Target) setCompiler(clang bool) {
+ 			target.CCompiler = target.Triple + "-" + target.CCompiler
+ 		}
+ 	}
++       if target.OS == "linux" && target.Arch == "arm" {
++               target.CCompiler = "armv7a-cros-linux-gnueabihf-clang++"
++       }
++       if target.OS == "linux" && target.Arch == "aarch64" {
++               target.CCompiler = "aarch64-cros-linux-gnu-clang++"
++       }
++       if target.OS == "linux" && target.Arch == "riscv64" {
++               target.CCompiler = "riscv64-cros-linux-gnu-clang++"
++	       target.CFlags = append(target.CFlags, "-mno-relax")
++       }
+ }
+ 
+ func (target *Target) replaceSourceDir(param *string, sourceDir string) {

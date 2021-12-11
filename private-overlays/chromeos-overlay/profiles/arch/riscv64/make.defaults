@@ -1,0 +1,7 @@
+ACCEPT_KEYWORDS="-~riscv"
+ABI="lp64d"
+CHOST_lp64d="riscv64-cros-linux-gnu"
+CFLAGS="-O2 -pipe -mno-relax"
+CXXFLAGS="${CFLAGS}"
+FFLAGS="${CFLAGS}"
+FCFLAGS="${CFLAGS}"

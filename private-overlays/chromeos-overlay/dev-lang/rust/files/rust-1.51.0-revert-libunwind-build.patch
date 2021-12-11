@@ -1,0 +1,21 @@
+This reverts commit 21abc88.
+
+Fixes https://github.com/rust-lang/rust/issues/76020
+
+Quote the open upstream CL (https://github.com/rust-lang/rust/issues/76026):
+I'm not sure what exact problem #72746 is supposed to fix, but it's probably incomplete as it breaks the build of 1.46.0 with llvm-libunwind enabled
+
+
+diff --git a/library/unwind/build.rs b/library/unwind/build.rs
+index 31d235cf679..d4bcd2ed4e8 100644
+--- a/library/unwind/build.rs
++++ b/library/unwind/build.rs
+@@ -116,8 +116,6 @@ mod llvm_libunwind {
+             cfg.flag("-fstrict-aliasing");
+             cfg.flag("-funwind-tables");
+             cfg.flag("-fvisibility=hidden");
+-            cfg.flag_if_supported("-fvisibility-global-new-delete-hidden");
+-            cfg.define("_LIBUNWIND_DISABLE_VISIBILITY_ANNOTATIONS", None);
+         }
+ 
+         let mut unwind_sources = vec![

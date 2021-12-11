@@ -1,0 +1,50 @@
+The only kind of bootstrap used here is `build`, which will erroneously try to build the Rust unit
+test framework on all targets. On many targets, this is a harmless mistake, but on the bare metal
+targets, this leads to an error such as:
+
+    warning: dropping unsupported crate type `dylib` for target `thumbv6m-none-eabi`
+
+    error[E0463]: can't find crate for `std`
+
+    error: aborting due to previous error
+
+    For more information about this error, try `rustc --explain E0463`.
+    error: Could not compile `term`.
+
+The missing `std` crate is expected because building the `std` crate is not applicable on bare metal
+targets. A deeper analysis of the bootstrap code follows:
+
+In many instances in the bootstrap code, there appear lines such as:
+
+     builder.ensure(compile::Test { compiler, target });
+
+These "ensure" that a specific target will get a certain component built (`compile::Test` in the
+above line), if not already previously "ensured." Usually, there is a guard clause checking to see
+if `target` is a `no_std` target (i.e. bare metal). However, these guard clauses and "ensure" calls
+are moot because `compile::Test` is part of the initialzed list of ensured bootstrap components for
+`Kind::Build` meaning that even `no_std` targets will get the unit test framework built, which has
+already been established as an impossibility.
+
+Note that there is a ton of code motion as of this commit:
+https://github.com/rust-lang/rust/commit/b47c9690d2974ec0318f1e87bf38f8f7ee6cf202
+
+Seeing as the `Std` build step behaves properly on no_std builds (see the comment in
+'src/bootstrap/compile.rs': "for no-std targets we only compile a few no_std crates"), the merge the
+libtest build step with libstd may actually mean things work properly without this patch in future
+rust releases.
+
+diff --git a/src/bootstrap/builder.rs b/src/bootstrap/builder.rs
+index 4cd793adaf5..c9cd92b95f5 100644
+--- a/src/bootstrap/compile.rs
++++ b/src/bootstrap/compile.rs
+@@ -390,6 +390,10 @@ impl Step for Test {
+         let target = self.target;
+         let compiler = self.compiler;
+ 
++        if builder.no_std(target) == Some(true) {
++            return;
++        }
++
+         builder.ensure(Std { compiler, target });
+ 
+         if builder.config.keep_stage.contains(&compiler.stage) {

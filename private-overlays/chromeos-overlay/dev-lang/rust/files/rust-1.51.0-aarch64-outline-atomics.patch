@@ -1,0 +1,561 @@
+Adds outline atomics support to Rust's compiler-rt build, since this is required
+with a sufficiently new version of clang. Support for these hasn't reached a
+stable version of LLVM yet, so we need to pick the changes and the corresponding
+build logic in.
+
+diff --git a/src/llvm-project/compiler-rt/lib/builtins/aarch64/lse.S b/src/llvm-project/compiler-rt/lib/builtins/aarch64/lse.S
+new file mode 100644
+index 000000000..5dc0d5320
+--- /dev/null
++++ b/src/llvm-project/compiler-rt/lib/builtins/aarch64/lse.S
+@@ -0,0 +1,236 @@
++// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
++// See https://llvm.org/LICENSE.txt for license information.
++// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
++
++#include "assembly.h"
++
++// Out-of-line LSE atomics helpers. Ported from libgcc library.
++// N = {1, 2, 4, 8}
++// M = {1, 2, 4, 8, 16}
++// ORDER = {'relax', 'acq', 'rel', 'acq_rel'}
++// Routines implemented:
++//
++//  iM __aarch64_casM_ORDER(iM expected, iM desired, iM *ptr)
++//  iN __aarch64_swpN_ORDER(iN val, iN *ptr)
++//  iN __aarch64_ldaddN_ORDER(iN val, iN *ptr)
++//  iN __aarch64_ldclrN_ORDER(iN val, iN *ptr)
++//  iN __aarch64_ldeorN_ORDER(iN val, iN *ptr)
++//  iN __aarch64_ldsetN_ORDER(iN val, iN *ptr)
++//
++// Routines may modify temporary registers tmp0, tmp1, tmp2,
++// return value x0 and the flags only.
++
++#ifdef __aarch64__
++
++#ifdef HAS_ASM_LSE
++.arch armv8-a+lse
++#else
++.arch armv8-a
++#endif
++
++#if !defined(__APPLE__)
++HIDDEN(__aarch64_have_lse_atomics)
++#else
++HIDDEN(___aarch64_have_lse_atomics)
++#endif
++
++// Generate mnemonics for
++// L_cas:                                 SIZE: 1,2,4,8,16 MODEL: 1,2,3,4
++// L_swp L_ldadd L_ldclr L_ldeor L_ldset: SIZE: 1,2,4,8    MODEL: 1,2,3,4
++
++#if SIZE == 1
++#define S b
++#define UXT uxtb
++#define B 0x00000000
++#elif SIZE == 2
++#define S h
++#define UXT uxth
++#define B 0x40000000
++#elif SIZE == 4 || SIZE == 8 || SIZE == 16
++#define S
++#define UXT mov
++#if SIZE == 4
++#define B 0x80000000
++#elif SIZE == 8
++#define B 0xc0000000
++#endif
++#else
++#error
++#endif // SIZE
++
++#if MODEL == 1
++#define SUFF _relax
++#define A
++#define L
++#define M 0x000000
++#define N 0x000000
++#elif MODEL == 2
++#define SUFF _acq
++#define A a
++#define L
++#define M 0x400000
++#define N 0x800000
++#elif MODEL == 3
++#define SUFF _rel
++#define A
++#define L l
++#define M 0x008000
++#define N 0x400000
++#elif MODEL == 4
++#define SUFF _acq_rel
++#define A a
++#define L l
++#define M 0x408000
++#define N 0xc00000
++#else
++#error
++#endif // MODEL
++
++// Define register size.
++#define x(N) GLUE2(x, N)
++#define w(N) GLUE2(w, N)
++#if SIZE < 8
++#define s(N) w(N)
++#else
++#define s(N) x(N)
++#endif
++
++#define NAME(BASE) GLUE4(__aarch64_, BASE, SIZE, SUFF)
++#define LDXR GLUE4(ld, A, xr, S)
++#define STXR GLUE4(st, L, xr, S)
++
++// Define temporary registers.
++#define tmp0 16
++#define tmp1 17
++#define tmp2 15
++
++// Macro for branch to label if no LSE available
++.macro JUMP_IF_NOT_LSE label
++#if !defined(__APPLE__)
++        adrp    x(tmp0), __aarch64_have_lse_atomics
++        ldrb    w(tmp0), [x(tmp0), :lo12:__aarch64_have_lse_atomics]
++#else
++        adrp    x(tmp0), ___aarch64_have_lse_atomics@page
++        ldrb    w(tmp0), [x(tmp0), ___aarch64_have_lse_atomics@pageoff]
++#endif
++        cbz     w(tmp0), \label
++.endm
++
++#ifdef L_cas
++DEFINE_COMPILERRT_OUTLINE_FUNCTION_UNMANGLED(NAME(cas))
++        JUMP_IF_NOT_LSE 8f
++#if SIZE < 16
++#ifdef HAS_ASM_LSE
++#define CAS GLUE4(cas, A, L, S) s(0), s(1), [x2]
++#else
++#define CAS .inst 0x08a07c41 + B + M
++#endif
++        CAS    // s(0), s(1), [x2]
++        ret
++8:
++        UXT    s(tmp0), s(0)
++0:
++        LDXR   s(0), [x2]
++        cmp    s(0), s(tmp0)
++        bne    1f
++        STXR   w(tmp1), s(1), [x2]
++        cbnz   w(tmp1), 0b
++1:
++        ret
++#else
++#define LDXP GLUE3(ld, A, xp)
++#define STXP GLUE3(st, L, xp)
++#ifdef HAS_ASM_LSE
++#define CASP GLUE3(casp, A, L)  x0, x1, x2, x3, [x4]
++#else
++#define CASP .inst 0x48207c82 + M
++#endif
++
++        CASP   // x0, x1, x2, x3, [x4]
++        ret
++8:
++        mov    x(tmp0), x0
++        mov    x(tmp1), x1
++0:
++        LDXP   x0, x1, [x4]
++        cmp    x0, x(tmp0)
++        ccmp   x1, x(tmp1), #0, eq
++        bne    1f
++        STXP   w(tmp2), x2, x3, [x4]
++        cbnz   w(tmp2), 0b
++1:
++        ret
++#endif
++END_COMPILERRT_OUTLINE_FUNCTION(NAME(cas))
++#endif // L_cas
++
++#ifdef L_swp
++#ifdef HAS_ASM_LSE
++#define SWP GLUE4(swp, A, L, S)  s(0), s(0), [x1]
++#else
++#define SWP .inst 0x38208020 + B + N
++#endif
++DEFINE_COMPILERRT_OUTLINE_FUNCTION_UNMANGLED(NAME(swp))
++        JUMP_IF_NOT_LSE 8f
++        SWP    // s(0), s(0), [x1]
++        ret
++8:
++        mov    s(tmp0), s(0)
++0:
++        LDXR   s(0), [x1]
++        STXR   w(tmp1), s(tmp0), [x1]
++        cbnz   w(tmp1), 0b
++        ret
++END_COMPILERRT_OUTLINE_FUNCTION(NAME(swp))
++#endif // L_swp
++
++#if defined(L_ldadd) || defined(L_ldclr) ||                                    \
++    defined(L_ldeor) || defined(L_ldset)
++
++#ifdef L_ldadd
++#define LDNM ldadd
++#define OP add
++#define OPN 0x0000
++#elif defined(L_ldclr)
++#define LDNM ldclr
++#define OP bic
++#define OPN 0x1000
++#elif defined(L_ldeor)
++#define LDNM ldeor
++#define OP eor
++#define OPN 0x2000
++#elif defined(L_ldset)
++#define LDNM ldset
++#define OP orr
++#define OPN 0x3000
++#else
++#error
++#endif
++
++#ifdef HAS_ASM_LSE
++#define LDOP GLUE4(LDNM, A, L, S) s(0), s(0), [x1]
++#else
++#define LDOP .inst 0x38200020 + OPN + B + N
++#endif
++
++DEFINE_COMPILERRT_OUTLINE_FUNCTION_UNMANGLED(NAME(LDNM))
++        JUMP_IF_NOT_LSE 8f
++        LDOP // s(0), s(0), [x1]
++        ret
++8:
++        mov    s(tmp0), s(0)
++0:
++        LDXR   s(0), [x1]
++        OP     s(tmp1), s(0), s(tmp0)
++        STXR   w(tmp2), s(tmp1), [x1]
++        cbnz   w(tmp2), 0b
++        ret
++END_COMPILERRT_OUTLINE_FUNCTION(NAME(LDNM))
++#endif // L_ldadd L_ldclr L_ldeor L_ldset
++
++NO_EXEC_STACK_DIRECTIVE
++
++// GNU property note for BTI and PAC
++GNU_PROPERTY_BTI_PAC
++
++#endif // __aarch64__
+diff --git a/src/llvm-project/compiler-rt/lib/builtins/assembly.h b/src/llvm-project/compiler-rt/lib/builtins/assembly.h
+index f437cb87f..f6ce6a9fc 100644
+--- a/src/llvm-project/compiler-rt/lib/builtins/assembly.h
++++ b/src/llvm-project/compiler-rt/lib/builtins/assembly.h
+@@ -14,8 +14,8 @@
+ #ifndef COMPILERRT_ASSEMBLY_H
+ #define COMPILERRT_ASSEMBLY_H
+ 
+-#if defined(__POWERPC__) || defined(__powerpc__) || defined(__ppc__)
+-#define SEPARATOR @
++#if defined(__APPLE__) && defined(__aarch64__)
++#define SEPARATOR %%
+ #else
+ #define SEPARATOR ;
+ #endif
+@@ -35,14 +35,14 @@
+ #define HIDDEN(name) .hidden name
+ #define LOCAL_LABEL(name) .L_##name
+ #define FILE_LEVEL_DIRECTIVE
+-#if defined(__arm__)
++#if defined(__arm__) || defined(__aarch64__)
+ #define SYMBOL_IS_FUNC(name) .type name,%function
+ #else
+ #define SYMBOL_IS_FUNC(name) .type name,@function
+ #endif
+ #define CONST_SECTION .section .rodata
+ 
+-#if defined(__GNU__) || defined(__FreeBSD__) || defined(__Fuchsia__) || \
++#if defined(__GNU__) || defined(__FreeBSD__) || defined(__Fuchsia__) ||        \
+     defined(__linux__)
+ #define NO_EXEC_STACK_DIRECTIVE .section .note.GNU-stack,"",%progbits
+ #else
+@@ -65,6 +65,66 @@
+ 
+ #endif
+ 
++#if defined(__arm__) || defined(__aarch64__)
++#define FUNC_ALIGN                                                             \
++  .text SEPARATOR                                                              \
++  .balign 16 SEPARATOR
++#else
++#define FUNC_ALIGN
++#endif
++
++// BTI and PAC gnu property note
++#define NT_GNU_PROPERTY_TYPE_0 5
++#define GNU_PROPERTY_AARCH64_FEATURE_1_AND 0xc0000000
++#define GNU_PROPERTY_AARCH64_FEATURE_1_BTI 1
++#define GNU_PROPERTY_AARCH64_FEATURE_1_PAC 2
++
++#if defined(__ARM_FEATURE_BTI_DEFAULT)
++#define BTI_FLAG GNU_PROPERTY_AARCH64_FEATURE_1_BTI
++#else
++#define BTI_FLAG 0
++#endif
++
++#if __ARM_FEATURE_PAC_DEFAULT & 3
++#define PAC_FLAG GNU_PROPERTY_AARCH64_FEATURE_1_PAC
++#else
++#define PAC_FLAG 0
++#endif
++
++#define GNU_PROPERTY(type, value)                                              \
++  .pushsection .note.gnu.property, "a" SEPARATOR                               \
++  .p2align 3 SEPARATOR                                                         \
++  .word 4 SEPARATOR                                                            \
++  .word 16 SEPARATOR                                                           \
++  .word NT_GNU_PROPERTY_TYPE_0 SEPARATOR                                       \
++  .asciz "GNU" SEPARATOR                                                       \
++  .word type SEPARATOR                                                         \
++  .word 4 SEPARATOR                                                            \
++  .word value SEPARATOR                                                        \
++  .word 0 SEPARATOR                                                            \
++  .popsection
++
++#if BTI_FLAG != 0
++#define BTI_C bti c
++#else
++#define BTI_C
++#endif
++
++#if (BTI_FLAG | PAC_FLAG) != 0
++#define GNU_PROPERTY_BTI_PAC                                                   \
++  GNU_PROPERTY(GNU_PROPERTY_AARCH64_FEATURE_1_AND, BTI_FLAG | PAC_FLAG)
++#else
++#define GNU_PROPERTY_BTI_PAC
++#endif
++
++#if defined(__clang__) || defined(__GCC_HAVE_DWARF2_CFI_ASM)
++#define CFI_START .cfi_startproc
++#define CFI_END .cfi_endproc
++#else
++#define CFI_START
++#define CFI_END
++#endif
++
+ #if defined(__arm__)
+ 
+ // Determine actual [ARM][THUMB[1][2]] ISA using compiler predefined macros:
+@@ -131,8 +191,14 @@
+ #define DEFINE_CODE_STATE
+ #endif
+ 
+-#define GLUE2(a, b) a##b
+-#define GLUE(a, b) GLUE2(a, b)
++#define GLUE2_(a, b) a##b
++#define GLUE(a, b) GLUE2_(a, b)
++#define GLUE2(a, b) GLUE2_(a, b)
++#define GLUE3_(a, b, c) a##b##c
++#define GLUE3(a, b, c) GLUE3_(a, b, c)
++#define GLUE4_(a, b, c, d) a##b##c##d
++#define GLUE4(a, b, c, d) GLUE4_(a, b, c, d)
++
+ #define SYMBOL_NAME(name) GLUE(__USER_LABEL_PREFIX__, name)
+ 
+ #ifdef VISIBILITY_HIDDEN
+@@ -177,6 +243,16 @@
+   DECLARE_FUNC_ENCODING                                                        \
+   name:
+ 
++#define DEFINE_COMPILERRT_OUTLINE_FUNCTION_UNMANGLED(name)                     \
++  DEFINE_CODE_STATE                                                            \
++  FUNC_ALIGN                                                                   \
++  .globl name SEPARATOR                                                        \
++  SYMBOL_IS_FUNC(name) SEPARATOR                                               \
++  DECLARE_SYMBOL_VISIBILITY(name) SEPARATOR                                    \
++  CFI_START SEPARATOR                                                          \
++  DECLARE_FUNC_ENCODING                                                        \
++  name: SEPARATOR BTI_C
++
+ #define DEFINE_COMPILERRT_FUNCTION_ALIAS(name, target)                         \
+   .globl SYMBOL_NAME(name) SEPARATOR                                           \
+   SYMBOL_IS_FUNC(SYMBOL_NAME(name)) SEPARATOR                                  \
+@@ -193,8 +269,13 @@
+ #ifdef __ELF__
+ #define END_COMPILERRT_FUNCTION(name)                                          \
+   .size SYMBOL_NAME(name), . - SYMBOL_NAME(name)
++#define END_COMPILERRT_OUTLINE_FUNCTION(name)                                  \
++  CFI_END SEPARATOR                                                            \
++  .size SYMBOL_NAME(name), . - SYMBOL_NAME(name)
+ #else
+ #define END_COMPILERRT_FUNCTION(name)
++#define END_COMPILERRT_OUTLINE_FUNCTION(name)                                  \
++  CFI_END
+ #endif
+ 
+ #endif // COMPILERRT_ASSEMBLY_H
+diff --git a/src/llvm-project/compiler-rt/lib/builtins/cpu_model.c b/src/llvm-project/compiler-rt/lib/builtins/cpu_model.c
+index 468bcc84c..1f72d800f 100644
+--- a/src/llvm-project/compiler-rt/lib/builtins/cpu_model.c
++++ b/src/llvm-project/compiler-rt/lib/builtins/cpu_model.c
+@@ -12,6 +12,16 @@
+ //
+ //===----------------------------------------------------------------------===//
+ 
++#if defined(HAVE_INIT_PRIORITY)
++#define CONSTRUCTOR_ATTRIBUTE __attribute__((__constructor__ 101))
++#elif __has_attribute(__constructor__)
++#define CONSTRUCTOR_ATTRIBUTE __attribute__((__constructor__))
++#else
++// FIXME: For MSVC, we should make a function pointer global in .CRT$X?? so that
++// this runs during initialization.
++#define CONSTRUCTOR_ATTRIBUTE
++#endif
++
+ #if (defined(__i386__) || defined(_M_IX86) || defined(__x86_64__) ||           \
+      defined(_M_X64)) &&                                                       \
+     (defined(__GNUC__) || defined(__clang__) || defined(_MSC_VER))
+@@ -656,16 +666,6 @@ static void getAvailableFeatures(unsigned ECX, unsigned EDX, unsigned MaxLeaf,
+ #undef setFeature
+ }
+ 
+-#if defined(HAVE_INIT_PRIORITY)
+-#define CONSTRUCTOR_ATTRIBUTE __attribute__((__constructor__ 101))
+-#elif __has_attribute(__constructor__)
+-#define CONSTRUCTOR_ATTRIBUTE __attribute__((__constructor__))
+-#else
+-// FIXME: For MSVC, we should make a function pointer global in .CRT$X?? so that
+-// this runs during initialization.
+-#define CONSTRUCTOR_ATTRIBUTE
+-#endif
+-
+ #ifndef _WIN32
+ __attribute__((visibility("hidden")))
+ #endif
+@@ -741,4 +741,24 @@ int CONSTRUCTOR_ATTRIBUTE __cpu_indicator_init(void) {
+   return 0;
+ }
+ 
++#elif defined(__aarch64__)
++// LSE support detection for out-of-line atomics
++// using HWCAP and Auxiliary vector
++_Bool __aarch64_have_lse_atomics
++    __attribute__((visibility("hidden"), nocommon));
++#if defined(__has_include)
++#if __has_include(<sys/auxv.h>)
++#include <sys/auxv.h>
++#ifndef AT_HWCAP
++#define AT_HWCAP 16
++#endif
++#ifndef HWCAP_ATOMICS
++#define HWCAP_ATOMICS (1 << 8)
++#endif
++static void CONSTRUCTOR_ATTRIBUTE init_have_lse_atomics(void) {
++  unsigned long hwcap = getauxval(AT_HWCAP);
++  __aarch64_have_lse_atomics = (hwcap & HWCAP_ATOMICS) != 0;
++}
++#endif // defined(__has_include)
++#endif // __has_include(<sys/auxv.h>)
+ #endif
+diff --git a/vendor/compiler_builtins/.cargo-checksum.json b/vendor/compiler_builtins/.cargo-checksum.json
+index 4322d5560..455b74c98 100644
+--- a/vendor/compiler_builtins/.cargo-checksum.json
++++ b/vendor/compiler_builtins/.cargo-checksum.json
+@@ -1 +1 @@
+-{"files":{"Cargo.lock":"fedb77f7dd757df815cfa613ef5a061fb889834523eb26ba3c8ac5b646266384","Cargo.toml":"cc15004b8111fcbff286d52f1a68460d52ab1c0d7ca6168cbd00836441ae934d","README.md":"2dd28b207028773ffee09ed0db563ac71b255b6b67256289d67a13cb19d15f94","build.rs":"8140e3dce70516bbf8d151565f8f50a31bbfab60e749becd649f4c11ee350282","examples/intrinsics.rs":"5bc2a8e39a541a6b55567f36ff9de17afad3cb620702a9e7c5b069a237f1197b","libm/src/math/acos.rs":"fb066ba84aba1372d706425ec14f35ff8d971756d15eeebd22ecf42a716493bb","libm/src/math/acosf.rs":"a112b82309bba1d35c4e3d6ad4d6c21ef305343d9ab601ddf4bc61d43bc9f1af","libm/src/math/acosh.rs":"56dac8538e4350cd7cf001327c89f087b68abb2e6aaad58edba8a094b09f6b0f","libm/src/math/acoshf.rs":"df5b0c4d8e37e64cf5ff2d8328b28bc35c78e84060ff769e64523ea9ff9065c1","libm/src/math/asin.rs":"095a1e98996daff45df0b154ca0ec35bbf31db964ee9fdda0207308cb20df441","libm/src/math/asinf.rs":"49cccb4db2881982643a4a7d5453f4f8daf527711bbb67313607a3c178856d61","libm/src/math/asinh.rs":"e8fc94031015fddf35e9c26b94da9f6431ee17c81cd7bd37da8ffc98f7e0b32c","libm/src/math/asinhf.rs":"8a0b8933a98a17617a66fef4c7b89eba645fdf05302000babf4a5a5f45328430","libm/src/math/atan.rs":"d4fe46e1c5739dd09997869dcfbc3c85f03c534af52e700d6c6bcf9c3fedda07","libm/src/math/atan2.rs":"2623bc8ca707d13a7092ce49adf68e9cbf4452ad1bf4a861dc40ca858606a747","libm/src/math/atan2f.rs":"dd01943e0e1f1955912e5c3ffc9467529cf64bd02ac0a6ad5ab31dbe6657f05d","libm/src/math/atanf.rs":"e41b41569474a59c970ede3538e00bda4072cf4d90040017101cc79d7dc28caa","libm/src/math/atanh.rs":"5934dbd6b7395ca4f103ace7598da723a9270e1cf6b47e7f786debe4bb3651ff","libm/src/math/atanhf.rs":"8ba4711dda19ef2dc33622be65c1483902868083543198c6bbd040d4026293de","libm/src/math/cbrt.rs":"f2c45612d2eecd93cfcdd9ebf824c754fc8f8dfd6d16862c0b9c4ccea78c2a0f","libm/src/math/cbrtf.rs":"ad0b483854aa9f17a44d36c049bf0e8ebab34c27e90b787c05f45cc230ec7d19","libm/src/math/ceil.rs":"0e6caff1597818471c28b7c3226dbfe9976fdb38ace5246172ac030754be6b79","libm/src/math/ceilf.rs":"f942bcea617de7da880b68bdfe676837a7984e2a887eaafe181be24c6bc13cc2","libm/src/math/copysign.rs":"d80c880efaf0cdf2ce0a4d4f5a68dd6c36c88d46fa997ec8ac8604bfdb26fa33","libm/src/math/copysignf.rs":"1547116071e68a42b1605eb2fc722db6466a34517dc96b92de1f29a274c3d8e3","libm/src/math/cos.rs":"74babdc13ede78e400c5ca1854c3e22d2e08cbdc5618aefa5bba6f9303ef65b6","libm/src/math/cosf.rs":"09c40f93c445b741e22477ceedf163ca33b6a47f973f7c9876cfba2692edb29c","libm/src/math/cosh.rs":"0d0a7cef18577f321996b8b87561963139f754ad7f2ea0a3b3883811f3f0693a","libm/src/math/coshf.rs":"be8ca8739e4cf1978425b349f941cb4838bba8c10cb559c7940b9fd4fdde21ad","libm/src/math/erf.rs":"9c55fc6756ba816996f0b585e07ccfa4cd87575ad525cd30c4a968b30acffda3","libm/src/math/erff.rs":"cb020e8bada9a54573a11fe3271750d73f14fed3092a881a9ceaf98fe32fd5a6","libm/src/math/exp.rs":"ca7405ad0d1993fffcf9aae96f9256307bed3c4916545aaebd1cf1d2df1807fa","libm/src/math/exp10.rs":"2deb037f88feac87a0e924b69dd496f0dd3b5d35f2a58e09d4c5166b207e517b","libm/src/math/exp10f.rs":"6979464dfe3f4f2da1f9afc909646499c4bfaef15e10a039384750e2f1586fea","libm/src/math/exp2.rs":"94a9304a2ce3bc81f6d2aefd3cde6faa30f13260d46cb13692863cdea1c9a3a1","libm/src/math/exp2f.rs":"785f2630accd35118ec07bf60273e219ed91a215b956b1552eeea5bc2a708cc8","libm/src/math/expf.rs":"ec14c18f891a9e37735ec39e6fc2e9bf674a2c2e083f22e2533b481177359c98","libm/src/math/expm1.rs":"124069f456c8ad331f265c7509d9e223b2a300e461bbfd3d6adfdcdd2ee5b8ac","libm/src/math/expm1f.rs":"18e2116d31ea8410051cc709b9d04b754b0e3ba6758ee1bf0b48749f4999b840","libm/src/math/expo2.rs":"4f4f9fecfccb43f30c2784aa7c0bb656754a52b8ab431f7d1b551c673ab133f1","libm/src/math/fabs.rs":"e6c7db39f98508098cdf64ac0c2f53866c466149a7490afb9fe22b44c4dd81b3","libm/src/math/fabsf.rs":"dc85b66e4ef662721276ae3a301af22795524e4367ee8dd40f0c24c439773c6d","libm/src/math/fdim.rs":"8ec091996005207297c2389ae563e1b18dbc6a9eac951de29a976c5cd7bc32a7","libm/src/math/fdimf.rs":"c7f3f2269834d55be26b6580ddc07c42531577955fa4de35bad1e2a361085614","libm/src/math/fenv.rs":"8730d45aa4c591f91dccdcc1ce533fa23e9c6df0c38defb9c57f749cb25e1cd0","libm/src/math/floor.rs":"be15e687a6798defc6f2c6b43028481f8104fb93d2b3f359d3d5d16b78e79d4f","libm/src/math/floorf.rs":"4ec41aa64cfafd23b8cfc043eacea5e9125cca5dcb3f5e655cc3d3458c6ba2c5","libm/src/math/fma.rs":"6872e79787e9270520189b53608f602b8ad5a099f3cef10ad5b9e0c06ef01fe0","libm/src/math/fmaf.rs":"3e0f5727e56f31218f674b9b8975d7e67b3a24a097f06a2a3eca9723cd786213","libm/src/math/fmax.rs":"f6c8e96a8b1a170648d2fa3513e7b6b459085d708c839869f82e305fe58fac37","libm/src/math/fmaxf.rs":"dff0025433232e8a5ec7bd54d847ccf596d762ea4e35f5c54fbaac9404d732fd","libm/src/math/fmin.rs":"95b6cb66ca0e0e22276f0bf88dbe8fb69796a69a196a7491bd4802efbcf2e298","libm/src/math/fminf.rs":"304bc839b15ea3d84e68d2af9f40524ec120d30a36a667b22fcb98a6c258f4c7","libm/src/math/fmod.rs":"a1c0550fc7df8164733d914e222ff0966a2ab886d6e75a1098f24fe0283ae227","libm/src/math/fmodf.rs":"ee51ed092c0eeb8195f35735ff725cfd46612e0d689a7c483538bd92fbe61828","libm/src/math/frexp.rs":"28af70026922a8ab979744c7ad4d8faba6079c4743b7eeb6d14c983a982fbbcc","libm/src/math/frexpf.rs":"2e2593ae8002ba420809ebfaf737ef001cdc912354be3d978a8c0cb930350d4d","libm/src/math/hypot.rs":"841131c4a0cea75bc8a86e29f3f6d0815a61fc99731c9984651ce83d3050d218","libm/src/math/hypotf.rs":"5f317323edc2eb699580fe54b074b7e570a7734d51a0a149c0b49b54470a836c","libm/src/math/ilogb.rs":"813413bf6266d4fc40db9c5921af3cef4f892ba93e8f6d9efe62a449d1234532","libm/src/math/ilogbf.rs":"dec462780f46682e16cfaa733238bed3b692729e951f53a44726100b6c73a716","libm/src/math/j0.rs":"9572b6396c489927d332d0e717920e61ec0618e5e9c31f7eeeec70f5e4abab06","libm/src/math/j0f.rs":"802c8254bded9b3afb6eea8b9af240038a5a4a5d811396729f69ca509e3e7d87","libm/src/math/j1.rs":"97b1af1611fa3d110c2b349ee8e4176100132ea1391b619086b47ac063b81803","libm/src/math/j1f.rs":"1d504d7750c0481273baad88196d3644f258af9ad10f8b5b16341c0aab8b9125","libm/src/math/jn.rs":"847d122334e5707ad9627146cddccc082a1f2f5bcd3e5ef54399013a7007ce88","libm/src/math/jnf.rs":"4045076f7d1a1b89882ed60d4dd60a4cbbc66b85cfb90491378c8015effcc476","libm/src/math/k_cos.rs":"f34a69e44d6b8901b03b578a75972f438ab20a7b98a0903fc1903d6fde3899be","libm/src/math/k_cosf.rs":"8f7117ff21cebf8e890a5bcfd7ea858a94172f4172b79a66d53824c2cb0888b1","libm/src/math/k_expo2.rs":"eb4ca9e6a525b7ea6da868c3cb136896682cc46f8396ba2a2ebc3ae9e9ba54b0","libm/src/math/k_expo2f.rs":"d51ad5df61cb5d1258bdb90c52bfed4572bb446a9337de9c04411ed9454ae0cb","libm/src/math/k_sin.rs":"14b2aba6ca07150c92768b5a72acaf5cde6a11d6619e14896512a7ba242e289a","libm/src/math/k_sinf.rs":"2775fcc710807164e6f37a4f8da3c8143cd5f16e19ce7c31c5591522151d7a96","libm/src/math/k_tan.rs":"a72beae4ccd9631eeeb61d6365bbeecae81c8411f3120a999c515cca0d5ea5c5","libm/src/math/k_tanf.rs":"6a794be56fa4b2f60452b9bab19af01c388f174560acbf829a351378ea39495d","libm/src/math/ldexp.rs":"b647f0096e80e4d926d8dd18d294c892ee2cb1778effe2c5e1b2664ae5cb1a4e","libm/src/math/ldexpf.rs":"98743fad2cd97a7be496f40ba3157ac1438fce0d0c25d5ab90c3b8c71c3fd0ed","libm/src/math/lgamma.rs":"498552658cc8106d7754f85ae8dbc3306ac2f0a9f7eb5a796be70c5beac92c41","libm/src/math/lgamma_r.rs":"77fb6442aeb5343926d8965e1549dde3e2cc4fd09555de6b56506001d956c344","libm/src/math/lgammaf.rs":"457105f53a4c8717e8f5a117d261dcf94e222e83981337fe23602abe883fe3f7","libm/src/math/lgammaf_r.rs":"44de75babbdd53c4a5879cd6f426e7311db82669def39df5f63914d67d6cc1b1","libm/src/math/log.rs":"b5e0c5f30d9e94351488732801be3107c12b854c3f95ad37e256dd88eeca408f","libm/src/math/log10.rs":"3425ff8be001fd1646ba15e254eb6ef4bdc6ccaf0cbee27ddf1fa84e04178b90","libm/src/math/log10f.rs":"fee4f71879bc4c99259e68c0c641364901629fb29a8ebddfcc0d090102cceddd","libm/src/math/log1p.rs":"9cf400852f165e6be19b97036ae9521fb9ca857d0a9a91c117d9123221622185","libm/src/math/log1pf.rs":"2716e6d2afa271996b7c8f47fd9e4952c88f4c1fd8c07c3e8ce8c62794bf71d8","libm/src/math/log2.rs":"dbbbfbaaa8aa6a4dbefea554ea3983090a9691228b011910c751f6adca912c40","libm/src/math/log2f.rs":"92a90350d8edce21c31c285c3e620fca7c62a2366008921715945c2c73b5b79f","libm/src/math/logf.rs":"845342cffc34d3db1f5ec12d8e5b773cd5a79056e28662fcb9bcd80207596f50","libm/src/math/mod.rs":"ffa73c08f4c0a4dc6c9d1cb9d62fe97f3a5046edede128c9441cc3adc9170dd3","libm/src/math/modf.rs":"d012ed5a708ef52b6d1313c22a46cadaf5764dde1220816e3df2f03a0fcc60ae","libm/src/math/modff.rs":"f8f1e4c27a85d2cdb3c8e74439d59ef64aa543b948f22c23227d02d8388d61c2","libm/src/math/nextafter.rs":"3282e7eef214a32736fb6928d490198ad394b26b402b45495115b104839eebfe","libm/src/math/nextafterf.rs":"0937dc8a8155c19842c12181e741cec1f7df1f7a00cee81fcb2475e2842761b7","libm/src/math/pow.rs":"64fba587143fa88cdfa5c9d30b658ab03e3a19e3ea3759394836add4068983c6","libm/src/math/powf.rs":"2c423a0ea57fdc4e20f3533f744c6e6288c998b4de8f2914fafaa0e78be81b04","libm/src/math/rem_pio2.rs":"9be99c44493b2b7088578c0fa2872630725b2da544c751516df0c6c686112a43","libm/src/math/rem_pio2_large.rs":"21762d08d72dc6f2e313123a7311683000974a09b8fcae50994d9c39239721b1","libm/src/math/rem_pio2f.rs":"377349d1308bda8cd2f776e4856fe090baa78fa3db816b680780ddf31b80d446","libm/src/math/remainder.rs":"63865f4370853c476b45bb27a5c54a4072146aa4a626835ae5263871a4e7e5dc","libm/src/math/remainderf.rs":"dd3fa432dbda8f2135428198be7bd69c57f8d13df3f365b12f52bf6a82352ac4","libm/src/math/remquo.rs":"3cc0bf55069f165c4843f2c358b3a27279c01e8cdd99f9057a3f7f31f45408f2","libm/src/math/remquof.rs":"cc749e18ecb7e766b8b8eeabdbf89ac99087d3d587e71e30f690676a3d2c1f9b","libm/src/math/round.rs":"955649c893fa3151b4a81c8e550fbc03f01bb99b40d60986e5f153ee71043f69","libm/src/math/roundf.rs":"8ae8f1f71eedd158566771cfe80b352d2f13c170a0ce8dc2691a14e8a791cfbb","libm/src/math/scalbn.rs":"b5c9d6d4177fe393cbfe1c634d75ce14b754f6cbce87c5bf979a9661491748a2","libm/src/math/scalbnf.rs":"4f198d06db1896386256fb9a5ac5b805b16b836226c18780a475cf18d7c1449c","libm/src/math/sin.rs":"0e014e6377c9673a73395ab2ffcf5962e512392afddf8a4e731fb694098faf34","libm/src/math/sincos.rs":"59e9f196140681fa817652134b8d1bdd2d6dd47bb8557b0346c77b176389f883","libm/src/math/sincosf.rs":"d37d71c7204c7892fe24c956df0fb95e7a014a808f5cbd5e125aee48c3c449b5","libm/src/math/sinf.rs":"dcddac1d56b084cbb8d0e019433c9c5fe2201d9b257a7dcf2f85c9a8f14b79cf","libm/src/math/sinh.rs":"d8ee4c7af883a526f36c1a6da13bb81fba9181b477e2f2538161a2bee97edc35","libm/src/math/sinhf.rs":"d06eb030ba9dbf7094df127262bfe99f149b4db49fa8ab8c15499660f1e46b26","libm/src/math/sqrt.rs":"824570a631c2542ccee68b65e3eb08fe79c037a29bbaaf54da5367e7b236124a","libm/src/math/sqrtf.rs":"d9e12ac55c5471c18175efdfb15c092ba71a2eb914d2e1ee3b3310a22202042e","libm/src/math/tan.rs":"930ecedaadc60f704c2dfa4e15186f59713c1ba7d948529d215223b424827db5","libm/src/math/tanf.rs":"894156a3b107aee08461eb4e7e412fc049aa237d176ae705c6e3e2d7060d94e3","libm/src/math/tanh.rs":"f1f08eb98ed959a17370a7aaf0177be36e3764543424e78feb033ed3f5e8ec98","libm/src/math/tanhf.rs":"74027b0c672a4e64bdef6d7a3069b90caec50e1e7dbb2c12d2828f310502f41e","libm/src/math/tgamma.rs":"a6aabb8365410af6611f19f58694ccb74e82bb9ba9e1cdec7e1af787cfa44815","libm/src/math/tgammaf.rs":"c95bd69957387533853532164f7e2251d2b04f5e775406b9e647226ae2bdd5ad","libm/src/math/trunc.rs":"642264897cc1505e720c8cf313be81aa9fd53aae866644a2e988d01dbc77fd8a","libm/src/math/truncf.rs":"619b675b6a9bb81eccddb1fa8214cff63e1f62136629b645c87f036672311732","src/arm.rs":"0f0e1cc79e53bf00192990544f99d85e5b2d5a1686fbeb5a2928481209ed2ef6","src/arm_linux.rs":"80d18ce84bdfa841fa133f5ee9e9fd50167344436d2d398f74347a90f27606c6","src/float/add.rs":"1a230ed4e17148cfffb7c880929c9c0d5d48d85581d75164c5031b8f05a5d567","src/float/cmp.rs":"83c8b62240a7275580dfd54786abee6cfeddf566dbb66803961e1d9115e46ae1","src/float/conv.rs":"4f2066ec5d536407819f19d6d5373b0773e7ab3e6455a7060f7c250bb6135175","src/float/div.rs":"1777fa8e1a18ce8b616b69e2cc732f4ab44781f12276a4089e074f7b4a5288c9","src/float/extend.rs":"180b2e791c58e0526de0a798845c580ce3222c8a15c8665e6e6a4bf5cf1a34aa","src/float/mod.rs":"cdee8f28d7e513fdbab282693cba79d5b06753d8259dd45829c98191ce483017","src/float/mul.rs":"2cafd35cbad5bd4ed6368f11ea13667f1f7f3f7cba05ccc10e38447e3a002075","src/float/pow.rs":"64f4935f4bed46d3b9cde4d16f59cca76a110d36d02d76f4b909157349edf5e3","src/float/sub.rs":"c2a87f4628f51d5d908d0f25b5d51ce0599dc559d5a72b20e131261f484d5848","src/int/addsub.rs":"7ec45ce1ba15b56a5b7129d3e5722c4db764c6545306d3fa9090983bcabd6f17","src/int/leading_zeros.rs":"91a445e5c0edd3c488fa95f9d5cba54a04bdc9e8573ae4fe5b30b51e01cb9476","src/int/mod.rs":"3dc621352089bbc99233fefbe3aecd3f86444d9b9119619245a0be4fc6c0ad17","src/int/mul.rs":"40c5a84c0bff28797eccc9cf8884b5880261818dee21c961f17f727b74d02261","src/int/sdiv.rs":"ec870b6a4b92e6f6c2ce5189bb98ce04f54272d32f8796d9d543b576ba32b76d","src/int/shift.rs":"4af3b9ec0b7e53587eef6257a086d4c194820f92b6fc547a7c96bd05ca60c708","src/int/specialized_div_rem/asymmetric.rs":"126104346b83e5c64c6015a1f891edb3c032e3319f802c265e6a6d010465e0fa","src/int/specialized_div_rem/binary_long.rs":"8be993c8cd2c9db59283e8e98870d276246b95b463446aa0cb13f71d1c92b31e","src/int/specialized_div_rem/delegate.rs":"f32fcf78fad5ad08eed1744bd1a4a3d444bd9fc8a71d72ad03bb3d278dc9208b","src/int/specialized_div_rem/mod.rs":"954fb4a6df7980ad77b5c4e6b5ccdfb56577a244132888b86c7b332770114ac7","src/int/specialized_div_rem/norm_shift.rs":"40ee517ca97d4d39652f4f47cb13751c5100ec05d614cadc7d660a33b217933b","src/int/specialized_div_rem/trifecta.rs":"fe693ec1c4c830215e4da4c91d827308a286d39b6fcf0d2f82587ae2a8f965bc","src/int/udiv.rs":"99b2a6e02a0324a3969a3a30fa3b6da6e1763efc9defa138e990d0ad57738fa1","src/lib.rs":"23999b91dcbf07565348208d517303391fe0dd2b37e398300bed2d5395591425","src/macros.rs":"f8a9c467eba7aa63747e4329041a1898eecaba34556c4e298f2c7452a38704b9","src/math.rs":"c97e2ad283089362721ea48e9355f8a3119559c14e1c249c67044e865827a164","src/mem/impls.rs":"8148e22bb2ac018141ec1062703a49ad154e4bee2f29211a56a4afd3d42247ea","src/mem/mod.rs":"835b1233a99bf3cabbe28ff8bb03867d0aa62793c511b2a40f05d7955dfa023a","src/mem/x86_64.rs":"ee2b6bb0449de5e4b20854bd9d3403f5e4808f8356eadf0dda26866847f6b929","src/probestack.rs":"7406031fdef254fbd052d97685e2f14353d18bd34ba4afe3035ecea7ebccf9ca","src/riscv32.rs":"b9b433d248fce35e43a7df430697545f39898fad46be7d0197284764e44993b2","src/x86.rs":"ef38d807fa13611041361b6d8b6cfc562c5cd25a6d3d79f46eea722094c711cd","src/x86_64.rs":"f8a5ac162709867da62535a233c9eb3f5ed4e77cef2c20e0ca79c497ff428c92"},"package":"3748f82c7d366a0b4950257d19db685d4958d2fa27c6d164a3f069fec42b748b"}
+\ No newline at end of file
++{"files":{"libm/src/math/cbrtf.rs":"ad0b483854aa9f17a44d36c049bf0e8ebab34c27e90b787c05f45cc230ec7d19","libm/src/math/scalbn.rs":"b5c9d6d4177fe393cbfe1c634d75ce14b754f6cbce87c5bf979a9661491748a2","libm/src/math/scalbnf.rs":"4f198d06db1896386256fb9a5ac5b805b16b836226c18780a475cf18d7c1449c","src/probestack.rs":"7406031fdef254fbd052d97685e2f14353d18bd34ba4afe3035ecea7ebccf9ca","libm/src/math/hypotf.rs":"5f317323edc2eb699580fe54b074b7e570a7734d51a0a149c0b49b54470a836c","libm/src/math/atan2.rs":"2623bc8ca707d13a7092ce49adf68e9cbf4452ad1bf4a861dc40ca858606a747","libm/src/math/atanhf.rs":"8ba4711dda19ef2dc33622be65c1483902868083543198c6bbd040d4026293de","libm/src/math/exp10.rs":"2deb037f88feac87a0e924b69dd496f0dd3b5d35f2a58e09d4c5166b207e517b","README.md":"2dd28b207028773ffee09ed0db563ac71b255b6b67256289d67a13cb19d15f94","libm/src/math/frexp.rs":"28af70026922a8ab979744c7ad4d8faba6079c4743b7eeb6d14c983a982fbbcc","libm/src/math/fmaxf.rs":"dff0025433232e8a5ec7bd54d847ccf596d762ea4e35f5c54fbaac9404d732fd","src/mem/mod.rs":"835b1233a99bf3cabbe28ff8bb03867d0aa62793c511b2a40f05d7955dfa023a","libm/src/math/fmin.rs":"95b6cb66ca0e0e22276f0bf88dbe8fb69796a69a196a7491bd4802efbcf2e298","src/float/cmp.rs":"83c8b62240a7275580dfd54786abee6cfeddf566dbb66803961e1d9115e46ae1","libm/src/math/round.rs":"955649c893fa3151b4a81c8e550fbc03f01bb99b40d60986e5f153ee71043f69","src/int/sdiv.rs":"ec870b6a4b92e6f6c2ce5189bb98ce04f54272d32f8796d9d543b576ba32b76d","src/mem/impls.rs":"8148e22bb2ac018141ec1062703a49ad154e4bee2f29211a56a4afd3d42247ea","libm/src/math/log10f.rs":"fee4f71879bc4c99259e68c0c641364901629fb29a8ebddfcc0d090102cceddd","libm/src/math/j1f.rs":"1d504d7750c0481273baad88196d3644f258af9ad10f8b5b16341c0aab8b9125","libm/src/math/ilogbf.rs":"dec462780f46682e16cfaa733238bed3b692729e951f53a44726100b6c73a716","libm/src/math/ldexpf.rs":"98743fad2cd97a7be496f40ba3157ac1438fce0d0c25d5ab90c3b8c71c3fd0ed","libm/src/math/lgamma_r.rs":"77fb6442aeb5343926d8965e1549dde3e2cc4fd09555de6b56506001d956c344","libm/src/math/tanf.rs":"894156a3b107aee08461eb4e7e412fc049aa237d176ae705c6e3e2d7060d94e3","libm/src/math/frexpf.rs":"2e2593ae8002ba420809ebfaf737ef001cdc912354be3d978a8c0cb930350d4d","libm/src/math/j1.rs":"97b1af1611fa3d110c2b349ee8e4176100132ea1391b619086b47ac063b81803","libm/src/math/powf.rs":"2c423a0ea57fdc4e20f3533f744c6e6288c998b4de8f2914fafaa0e78be81b04","libm/src/math/tgammaf.rs":"c95bd69957387533853532164f7e2251d2b04f5e775406b9e647226ae2bdd5ad","libm/src/math/tgamma.rs":"a6aabb8365410af6611f19f58694ccb74e82bb9ba9e1cdec7e1af787cfa44815","src/lib.rs":"23999b91dcbf07565348208d517303391fe0dd2b37e398300bed2d5395591425","libm/src/math/modff.rs":"f8f1e4c27a85d2cdb3c8e74439d59ef64aa543b948f22c23227d02d8388d61c2","libm/src/math/jnf.rs":"4045076f7d1a1b89882ed60d4dd60a4cbbc66b85cfb90491378c8015effcc476","libm/src/math/lgammaf_r.rs":"44de75babbdd53c4a5879cd6f426e7311db82669def39df5f63914d67d6cc1b1","libm/src/math/fmodf.rs":"ee51ed092c0eeb8195f35735ff725cfd46612e0d689a7c483538bd92fbe61828","libm/src/math/asinhf.rs":"8a0b8933a98a17617a66fef4c7b89eba645fdf05302000babf4a5a5f45328430","Cargo.toml":"cc15004b8111fcbff286d52f1a68460d52ab1c0d7ca6168cbd00836441ae934d","libm/src/math/sinhf.rs":"d06eb030ba9dbf7094df127262bfe99f149b4db49fa8ab8c15499660f1e46b26","src/float/pow.rs":"64f4935f4bed46d3b9cde4d16f59cca76a110d36d02d76f4b909157349edf5e3","libm/src/math/fabsf.rs":"dc85b66e4ef662721276ae3a301af22795524e4367ee8dd40f0c24c439773c6d","libm/src/math/hypot.rs":"841131c4a0cea75bc8a86e29f3f6d0815a61fc99731c9984651ce83d3050d218","src/float/mod.rs":"cdee8f28d7e513fdbab282693cba79d5b06753d8259dd45829c98191ce483017","libm/src/math/cosh.rs":"0d0a7cef18577f321996b8b87561963139f754ad7f2ea0a3b3883811f3f0693a","libm/src/math/fminf.rs":"304bc839b15ea3d84e68d2af9f40524ec120d30a36a667b22fcb98a6c258f4c7","libm/src/math/asinf.rs":"49cccb4db2881982643a4a7d5453f4f8daf527711bbb67313607a3c178856d61","src/int/specialized_div_rem/mod.rs":"954fb4a6df7980ad77b5c4e6b5ccdfb56577a244132888b86c7b332770114ac7","src/arm_linux.rs":"80d18ce84bdfa841fa133f5ee9e9fd50167344436d2d398f74347a90f27606c6","libm/src/math/acos.rs":"fb066ba84aba1372d706425ec14f35ff8d971756d15eeebd22ecf42a716493bb","libm/src/math/coshf.rs":"be8ca8739e4cf1978425b349f941cb4838bba8c10cb559c7940b9fd4fdde21ad","libm/src/math/exp.rs":"ca7405ad0d1993fffcf9aae96f9256307bed3c4916545aaebd1cf1d2df1807fa","libm/src/math/roundf.rs":"8ae8f1f71eedd158566771cfe80b352d2f13c170a0ce8dc2691a14e8a791cfbb","libm/src/math/expf.rs":"ec14c18f891a9e37735ec39e6fc2e9bf674a2c2e083f22e2533b481177359c98","libm/src/math/fdim.rs":"8ec091996005207297c2389ae563e1b18dbc6a9eac951de29a976c5cd7bc32a7","libm/src/math/sqrtf.rs":"d9e12ac55c5471c18175efdfb15c092ba71a2eb914d2e1ee3b3310a22202042e","src/x86.rs":"ef38d807fa13611041361b6d8b6cfc562c5cd25a6d3d79f46eea722094c711cd","libm/src/math/cbrt.rs":"f2c45612d2eecd93cfcdd9ebf824c754fc8f8dfd6d16862c0b9c4ccea78c2a0f","libm/src/math/cosf.rs":"09c40f93c445b741e22477ceedf163ca33b6a47f973f7c9876cfba2692edb29c","libm/src/math/sincos.rs":"59e9f196140681fa817652134b8d1bdd2d6dd47bb8557b0346c77b176389f883","src/int/udiv.rs":"99b2a6e02a0324a3969a3a30fa3b6da6e1763efc9defa138e990d0ad57738fa1","libm/src/math/log2.rs":"dbbbfbaaa8aa6a4dbefea554ea3983090a9691228b011910c751f6adca912c40","libm/src/math/sinf.rs":"dcddac1d56b084cbb8d0e019433c9c5fe2201d9b257a7dcf2f85c9a8f14b79cf","libm/src/math/fmaf.rs":"3e0f5727e56f31218f674b9b8975d7e67b3a24a097f06a2a3eca9723cd786213","libm/src/math/sqrt.rs":"824570a631c2542ccee68b65e3eb08fe79c037a29bbaaf54da5367e7b236124a","libm/src/math/log1p.rs":"9cf400852f165e6be19b97036ae9521fb9ca857d0a9a91c117d9123221622185","libm/src/math/asin.rs":"095a1e98996daff45df0b154ca0ec35bbf31db964ee9fdda0207308cb20df441","libm/src/math/k_cos.rs":"f34a69e44d6b8901b03b578a75972f438ab20a7b98a0903fc1903d6fde3899be","libm/src/math/log10.rs":"3425ff8be001fd1646ba15e254eb6ef4bdc6ccaf0cbee27ddf1fa84e04178b90","libm/src/math/asinh.rs":"e8fc94031015fddf35e9c26b94da9f6431ee17c81cd7bd37da8ffc98f7e0b32c","libm/src/math/log2f.rs":"92a90350d8edce21c31c285c3e620fca7c62a2366008921715945c2c73b5b79f","libm/src/math/k_sinf.rs":"2775fcc710807164e6f37a4f8da3c8143cd5f16e19ce7c31c5591522151d7a96","libm/src/math/fma.rs":"6872e79787e9270520189b53608f602b8ad5a099f3cef10ad5b9e0c06ef01fe0","libm/src/math/erf.rs":"9c55fc6756ba816996f0b585e07ccfa4cd87575ad525cd30c4a968b30acffda3","libm/src/math/fenv.rs":"8730d45aa4c591f91dccdcc1ce533fa23e9c6df0c38defb9c57f749cb25e1cd0","src/x86_64.rs":"f8a5ac162709867da62535a233c9eb3f5ed4e77cef2c20e0ca79c497ff428c92","src/float/div.rs":"1777fa8e1a18ce8b616b69e2cc732f4ab44781f12276a4089e074f7b4a5288c9","libm/src/math/ceilf.rs":"f942bcea617de7da880b68bdfe676837a7984e2a887eaafe181be24c6bc13cc2","libm/src/math/rem_pio2_large.rs":"21762d08d72dc6f2e313123a7311683000974a09b8fcae50994d9c39239721b1","src/float/sub.rs":"c2a87f4628f51d5d908d0f25b5d51ce0599dc559d5a72b20e131261f484d5848","libm/src/math/lgamma.rs":"498552658cc8106d7754f85ae8dbc3306ac2f0a9f7eb5a796be70c5beac92c41","src/macros.rs":"f8a9c467eba7aa63747e4329041a1898eecaba34556c4e298f2c7452a38704b9","libm/src/math/copysignf.rs":"1547116071e68a42b1605eb2fc722db6466a34517dc96b92de1f29a274c3d8e3","libm/src/math/atanf.rs":"e41b41569474a59c970ede3538e00bda4072cf4d90040017101cc79d7dc28caa","libm/src/math/ldexp.rs":"b647f0096e80e4d926d8dd18d294c892ee2cb1778effe2c5e1b2664ae5cb1a4e","libm/src/math/tanh.rs":"f1f08eb98ed959a17370a7aaf0177be36e3764543424e78feb033ed3f5e8ec98","libm/src/math/remainder.rs":"63865f4370853c476b45bb27a5c54a4072146aa4a626835ae5263871a4e7e5dc","libm/src/math/jn.rs":"847d122334e5707ad9627146cddccc082a1f2f5bcd3e5ef54399013a7007ce88","libm/src/math/k_expo2f.rs":"d51ad5df61cb5d1258bdb90c52bfed4572bb446a9337de9c04411ed9454ae0cb","libm/src/math/tan.rs":"930ecedaadc60f704c2dfa4e15186f59713c1ba7d948529d215223b424827db5","src/int/specialized_div_rem/binary_long.rs":"8be993c8cd2c9db59283e8e98870d276246b95b463446aa0cb13f71d1c92b31e","libm/src/math/floorf.rs":"4ec41aa64cfafd23b8cfc043eacea5e9125cca5dcb3f5e655cc3d3458c6ba2c5","libm/src/math/ceil.rs":"0e6caff1597818471c28b7c3226dbfe9976fdb38ace5246172ac030754be6b79","libm/src/math/exp2.rs":"94a9304a2ce3bc81f6d2aefd3cde6faa30f13260d46cb13692863cdea1c9a3a1","libm/src/math/trunc.rs":"642264897cc1505e720c8cf313be81aa9fd53aae866644a2e988d01dbc77fd8a","libm/src/math/remquof.rs":"cc749e18ecb7e766b8b8eeabdbf89ac99087d3d587e71e30f690676a3d2c1f9b","libm/src/math/modf.rs":"d012ed5a708ef52b6d1313c22a46cadaf5764dde1220816e3df2f03a0fcc60ae","src/float/conv.rs":"4f2066ec5d536407819f19d6d5373b0773e7ab3e6455a7060f7c250bb6135175","libm/src/math/fabs.rs":"e6c7db39f98508098cdf64ac0c2f53866c466149a7490afb9fe22b44c4dd81b3","src/float/mul.rs":"2cafd35cbad5bd4ed6368f11ea13667f1f7f3f7cba05ccc10e38447e3a002075","src/int/mod.rs":"3dc621352089bbc99233fefbe3aecd3f86444d9b9119619245a0be4fc6c0ad17","libm/src/math/fmax.rs":"f6c8e96a8b1a170648d2fa3513e7b6b459085d708c839869f82e305fe58fac37","libm/src/math/log.rs":"b5e0c5f30d9e94351488732801be3107c12b854c3f95ad37e256dd88eeca408f","libm/src/math/erff.rs":"cb020e8bada9a54573a11fe3271750d73f14fed3092a881a9ceaf98fe32fd5a6","libm/src/math/atan.rs":"d4fe46e1c5739dd09997869dcfbc3c85f03c534af52e700d6c6bcf9c3fedda07","libm/src/math/k_tanf.rs":"6a794be56fa4b2f60452b9bab19af01c388f174560acbf829a351378ea39495d","src/math.rs":"c97e2ad283089362721ea48e9355f8a3119559c14e1c249c67044e865827a164","libm/src/math/j0.rs":"9572b6396c489927d332d0e717920e61ec0618e5e9c31f7eeeec70f5e4abab06","libm/src/math/sincosf.rs":"d37d71c7204c7892fe24c956df0fb95e7a014a808f5cbd5e125aee48c3c449b5","libm/src/math/remquo.rs":"3cc0bf55069f165c4843f2c358b3a27279c01e8cdd99f9057a3f7f31f45408f2","libm/src/math/j0f.rs":"802c8254bded9b3afb6eea8b9af240038a5a4a5d811396729f69ca509e3e7d87","libm/src/math/lgammaf.rs":"457105f53a4c8717e8f5a117d261dcf94e222e83981337fe23602abe883fe3f7","src/int/specialized_div_rem/norm_shift.rs":"40ee517ca97d4d39652f4f47cb13751c5100ec05d614cadc7d660a33b217933b","libm/src/math/sin.rs":"0e014e6377c9673a73395ab2ffcf5962e512392afddf8a4e731fb694098faf34","src/float/add.rs":"1a230ed4e17148cfffb7c880929c9c0d5d48d85581d75164c5031b8f05a5d567","libm/src/math/log1pf.rs":"2716e6d2afa271996b7c8f47fd9e4952c88f4c1fd8c07c3e8ce8c62794bf71d8","libm/src/math/rem_pio2f.rs":"377349d1308bda8cd2f776e4856fe090baa78fa3db816b680780ddf31b80d446","src/arm.rs":"0f0e1cc79e53bf00192990544f99d85e5b2d5a1686fbeb5a2928481209ed2ef6","libm/src/math/floor.rs":"be15e687a6798defc6f2c6b43028481f8104fb93d2b3f359d3d5d16b78e79d4f","libm/src/math/ilogb.rs":"813413bf6266d4fc40db9c5921af3cef4f892ba93e8f6d9efe62a449d1234532","libm/src/math/k_cosf.rs":"8f7117ff21cebf8e890a5bcfd7ea858a94172f4172b79a66d53824c2cb0888b1","libm/src/math/sinh.rs":"d8ee4c7af883a526f36c1a6da13bb81fba9181b477e2f2538161a2bee97edc35","libm/src/math/fdimf.rs":"c7f3f2269834d55be26b6580ddc07c42531577955fa4de35bad1e2a361085614","libm/src/math/exp10f.rs":"6979464dfe3f4f2da1f9afc909646499c4bfaef15e10a039384750e2f1586fea","libm/src/math/nextafter.rs":"3282e7eef214a32736fb6928d490198ad394b26b402b45495115b104839eebfe","src/int/specialized_div_rem/trifecta.rs":"fe693ec1c4c830215e4da4c91d827308a286d39b6fcf0d2f82587ae2a8f965bc","libm/src/math/atan2f.rs":"dd01943e0e1f1955912e5c3ffc9467529cf64bd02ac0a6ad5ab31dbe6657f05d","libm/src/math/truncf.rs":"619b675b6a9bb81eccddb1fa8214cff63e1f62136629b645c87f036672311732","libm/src/math/acosh.rs":"56dac8538e4350cd7cf001327c89f087b68abb2e6aaad58edba8a094b09f6b0f","libm/src/math/pow.rs":"64fba587143fa88cdfa5c9d30b658ab03e3a19e3ea3759394836add4068983c6","libm/src/math/remainderf.rs":"dd3fa432dbda8f2135428198be7bd69c57f8d13df3f365b12f52bf6a82352ac4","libm/src/math/k_sin.rs":"14b2aba6ca07150c92768b5a72acaf5cde6a11d6619e14896512a7ba242e289a","libm/src/math/k_tan.rs":"a72beae4ccd9631eeeb61d6365bbeecae81c8411f3120a999c515cca0d5ea5c5","libm/src/math/fmod.rs":"a1c0550fc7df8164733d914e222ff0966a2ab886d6e75a1098f24fe0283ae227","libm/src/math/atanh.rs":"5934dbd6b7395ca4f103ace7598da723a9270e1cf6b47e7f786debe4bb3651ff","libm/src/math/acosf.rs":"a112b82309bba1d35c4e3d6ad4d6c21ef305343d9ab601ddf4bc61d43bc9f1af","libm/src/math/exp2f.rs":"785f2630accd35118ec07bf60273e219ed91a215b956b1552eeea5bc2a708cc8","src/int/leading_zeros.rs":"91a445e5c0edd3c488fa95f9d5cba54a04bdc9e8573ae4fe5b30b51e01cb9476","build.rs":"a47b5ed5c7d2a6f2fbc3e9803a8d4f75839db9ac03aa4fab72932d899ecb590f","src/mem/x86_64.rs":"ee2b6bb0449de5e4b20854bd9d3403f5e4808f8356eadf0dda26866847f6b929","Cargo.lock":"fedb77f7dd757df815cfa613ef5a061fb889834523eb26ba3c8ac5b646266384","src/int/shift.rs":"4af3b9ec0b7e53587eef6257a086d4c194820f92b6fc547a7c96bd05ca60c708","libm/src/math/k_expo2.rs":"eb4ca9e6a525b7ea6da868c3cb136896682cc46f8396ba2a2ebc3ae9e9ba54b0","libm/src/math/expm1.rs":"124069f456c8ad331f265c7509d9e223b2a300e461bbfd3d6adfdcdd2ee5b8ac","libm/src/math/mod.rs":"ffa73c08f4c0a4dc6c9d1cb9d62fe97f3a5046edede128c9441cc3adc9170dd3","src/float/extend.rs":"180b2e791c58e0526de0a798845c580ce3222c8a15c8665e6e6a4bf5cf1a34aa","libm/src/math/logf.rs":"845342cffc34d3db1f5ec12d8e5b773cd5a79056e28662fcb9bcd80207596f50","libm/src/math/acoshf.rs":"df5b0c4d8e37e64cf5ff2d8328b28bc35c78e84060ff769e64523ea9ff9065c1","libm/src/math/tanhf.rs":"74027b0c672a4e64bdef6d7a3069b90caec50e1e7dbb2c12d2828f310502f41e","src/int/mul.rs":"40c5a84c0bff28797eccc9cf8884b5880261818dee21c961f17f727b74d02261","libm/src/math/nextafterf.rs":"0937dc8a8155c19842c12181e741cec1f7df1f7a00cee81fcb2475e2842761b7","src/int/specialized_div_rem/asymmetric.rs":"126104346b83e5c64c6015a1f891edb3c032e3319f802c265e6a6d010465e0fa","libm/src/math/expm1f.rs":"18e2116d31ea8410051cc709b9d04b754b0e3ba6758ee1bf0b48749f4999b840","libm/src/math/expo2.rs":"4f4f9fecfccb43f30c2784aa7c0bb656754a52b8ab431f7d1b551c673ab133f1","examples/intrinsics.rs":"5bc2a8e39a541a6b55567f36ff9de17afad3cb620702a9e7c5b069a237f1197b","libm/src/math/cos.rs":"74babdc13ede78e400c5ca1854c3e22d2e08cbdc5618aefa5bba6f9303ef65b6","libm/src/math/copysign.rs":"d80c880efaf0cdf2ce0a4d4f5a68dd6c36c88d46fa997ec8ac8604bfdb26fa33","libm/src/math/rem_pio2.rs":"9be99c44493b2b7088578c0fa2872630725b2da544c751516df0c6c686112a43","src/int/addsub.rs":"7ec45ce1ba15b56a5b7129d3e5722c4db764c6545306d3fa9090983bcabd6f17","src/int/specialized_div_rem/delegate.rs":"f32fcf78fad5ad08eed1744bd1a4a3d444bd9fc8a71d72ad03bb3d278dc9208b","src/riscv32.rs":"b9b433d248fce35e43a7df430697545f39898fad46be7d0197284764e44993b2"},"package":"3748f82c7d366a0b4950257d19db685d4958d2fa27c6d164a3f069fec42b748b"}
+\ No newline at end of file
+diff --git a/vendor/compiler_builtins/build.rs b/vendor/compiler_builtins/build.rs
+index f948edba9..c57802569 100644
+--- a/vendor/compiler_builtins/build.rs
++++ b/vendor/compiler_builtins/build.rs
+@@ -81,7 +81,7 @@ mod c {
+ 
+     use std::collections::BTreeMap;
+     use std::env;
+-    use std::path::PathBuf;
++    use std::path::{Path, PathBuf};
+ 
+     struct Sources {
+         // SYMBOL -> PATH TO SOURCE
+@@ -487,7 +487,20 @@ mod c {
+         // use of that macro in lib/builtins/int_util.h in compiler-rt.
+         cfg.flag_if_supported(&format!("-ffile-prefix-map={}=.", root.display()));
+ 
++        // Include out-of-line atomics for aarch64, which are all generated by supplying different
++        // sets of flags to the same source file.
+         let src_dir = root.join("lib/builtins");
++        if target_arch == "aarch64" {
++            let atomics_libs = build_aarch64_out_of_line_atomics_libraries(&src_dir, cfg);
++            if !atomics_libs.is_empty() {
++                for library in  atomics_libs {
++                    cfg.object(library);
++                }
++                // Some run-time CPU feature detection is necessary, as well.
++                sources.extend(&[("__aarch64_have_lse_atomics", "cpu_model.c")]);
++            }
++        }
++
+         for (sym, src) in sources.map.iter() {
+             let src = src_dir.join(src);
+             cfg.file(&src);
+@@ -497,4 +510,60 @@ mod c {
+ 
+         cfg.compile("libcompiler-rt.a");
+     }
++
++    fn build_aarch64_out_of_line_atomics_libraries(
++        builtins_dir: &Path,
++        cfg: &cc::Build,
++    ) -> Vec<PathBuf> {
++        // NOTE: because we're recompiling the same source file in N different ways, building
++        // serially is necessary. If we want to lift this restriction, we can either:
++        // - create symlinks to lse.S and build those_(though we'd still need to pass special
++        //   #define-like flags to each of these), or
++        // - synthesizing tiny .S files in out/ with the proper #defines, which ultimately #include
++        //   lse.S.
++        // That said, it's unclear how useful this added complexity will be, so just do the simple
++        // thing for now.
++        let outlined_atomics_file = builtins_dir.join("aarch64/lse.S");
++
++        // A stable release hasn't been made with lse.S yet. Until we pick that up, do nothing.
++        if !outlined_atomics_file.exists() {
++            return vec![];
++        }
++
++        println!("cargo:rerun-if-changed={}", outlined_atomics_file.display());
++        let out_dir: PathBuf = env::var("OUT_DIR").unwrap().into();
++
++        // Ideally, this would be a Vec of object files, but cc doesn't make it *entirely*
++        // trivial to build an individual object.
++        let mut atomics_libraries = Vec::new();
++        for instruction_type in &["cas", "cwp", "ldadd", "ldclr", "ldeor", "ldset"] {
++            for size in &[1, 2, 4, 8, 16] {
++                if *size == 16 && *instruction_type != "cas" {
++                    continue;
++                }
++
++                for (model_number, model_name) in
++                    &[(1, "relax"), (2, "acq"), (3, "rel"), (4, "acq_rel")]
++                {
++                    let library_name = format!(
++                        "liboutline_atomic_helper_{}_{}_{}.a",
++                        instruction_type, size, model_name
++                    );
++                    let sym = format!("__aarch64_{}{}_{}", instruction_type, size, model_name);
++                    let mut cfg = cfg.clone();
++
++                    cfg.include(&builtins_dir)
++                        .define(&format!("L_{}", instruction_type), None)
++                        .define("SIZE", size.to_string().as_str())
++                        .define("MODEL", model_number.to_string().as_str())
++                        .file(&outlined_atomics_file);
++                    cfg.compile(&library_name);
++
++                    atomics_libraries.push(out_dir.join(library_name));
++                    println!("cargo:rustc-cfg={}=\"optimized-c\"", sym);
++                }
++            }
++        }
++        atomics_libraries
++    }
+ }

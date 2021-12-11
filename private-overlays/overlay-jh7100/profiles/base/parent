@@ -1,0 +1,3 @@
+chromeos-overlay:default/linux/riscv64/10.0/chromeos/little-endian
+baseboard-starlight:base
+arch-riscv:base

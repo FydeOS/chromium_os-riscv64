@@ -1,0 +1,2 @@
+sys-kernel/chromeos-kernel-sifive -apply_patches
+>=sys-kernel/chromeos-kernel-sifive-9999 -apply_patches

@@ -1,0 +1,66 @@
+From 1c20b5b25864e67b4fc219035beefd5174e36871 Mon Sep 17 00:00:00 2001
+From: Narayanraddi Masti <nmasti@google.com>
+Date: Tue, 2 Jul 2019 01:28:28 -0700
+Subject: [PATCH] UPSTREAM: nl80211: include nl80211_sta_info enums
+
+Add nl80211_sta_info enums to sync with 5.2-rc7 from upstream
+and following are the upstream commits added to sync with 5.2-rc7
+
+1.c4b50cd31d25c3d17886ffc47ca4a9a12c6dc9bf - NL80211_STA_INFO_ACK_SIGNAL
+2.9c06602b1b920ed6b546632bdbbc1f400eea5242 - NL80211_STA_INFO_ACK_SIGNAL_AVG
+3.0d4e14a32dcab9c4bd559d02874120fbb86b1322 - NL80211_STA_INFO_RX_MPDUS
+                                             NL80211_STA_INFO_FCS_ERROR_COUNT
+4.dbdaee7aa6e61f56aac61b71a7807e76f92cc895 - NL80211_STA_INFO_CONNECTED_TO_GATE
+5.36647055b37ec78e9068f470f14e7cd75c001c22 - NL80211_STA_INFO_TX_DURATION
+                                           - NL80211_STA_INFO_AIRTIME_WEIGHT
+6.ab60633c7136c300f15a390f3469d7c4be15a055 -
+  NL80211_STA_INFO_AIRTIME_LINK_METRIC
+
+Signed-off-by: Narayanraddi Masti <nmasti@google.com>
+---
+ include/uapi/linux/nl80211.h | 22 ++++++++++++++++++++++
+ 1 file changed, 22 insertions(+)
+
+diff --git a/include/uapi/linux/nl80211.h b/include/uapi/linux/nl80211.h
+index f41ea5af22ee..cb8203fc9f0e 100644
+--- a/include/uapi/linux/nl80211.h
++++ b/include/uapi/linux/nl80211.h
+@@ -2887,6 +2887,20 @@ enum nl80211_sta_bss_param {
+  * @NL80211_STA_INFO_RX_DURATION: aggregate PPDU duration for all frames
+  *	received from the station (u64, usec)
+  * @NL80211_STA_INFO_PAD: attribute used for padding for 64-bit alignment
++ * @NL80211_STA_INFO_ACK_SIGNAL: signal strength of the last ACK frame(u8, dBm)
++ * @NL80211_STA_INFO_ACK_SIGNAL_AVG: avg signal strength of ACK frames (s8, dBm)
++ * @NL80211_STA_INFO_RX_MPDUS: total number of received packets (MPDUs)
++ *	(u32, from this station)
++ * @NL80211_STA_INFO_FCS_ERROR_COUNT: total number of packets (MPDUs) received
++ *	with an FCS error (u32, from this station). This count may not include
++ *	some packets with an FCS error due to TA corruption. Hence this counter
++ *	might not be fully accurate.
++ * @NL80211_STA_INFO_CONNECTED_TO_GATE: set to true if STA has a path to a
++ *	mesh gate
++ * @NL80211_STA_INFO_TX_DURATION: aggregate PPDU duration for all frames
++ *	sent to the station (u64, usec)
++ * @NL80211_STA_INFO_AIRTIME_WEIGHT: current airtime weight for station (u16)
++ * @NL80211_STA_INFO_AIRTIME_LINK_METRIC: airtime link metric for mesh station
+  * @__NL80211_STA_INFO_AFTER_LAST: internal
+  * @NL80211_STA_INFO_MAX: highest possible station info attribute
+  */
+@@ -2925,6 +2939,14 @@ enum nl80211_sta_info {
+ 	NL80211_STA_INFO_TID_STATS,
+ 	NL80211_STA_INFO_RX_DURATION,
+ 	NL80211_STA_INFO_PAD,
++	NL80211_STA_INFO_ACK_SIGNAL,
++	NL80211_STA_INFO_ACK_SIGNAL_AVG,
++	NL80211_STA_INFO_RX_MPDUS,
++	NL80211_STA_INFO_FCS_ERROR_COUNT,
++	NL80211_STA_INFO_CONNECTED_TO_GATE,
++	NL80211_STA_INFO_TX_DURATION,
++	NL80211_STA_INFO_AIRTIME_WEIGHT,
++	NL80211_STA_INFO_AIRTIME_LINK_METRIC,
+ 
+ 	/* keep last */
+ 	__NL80211_STA_INFO_AFTER_LAST,
+-- 
+2.22.0.410.gd8fdbe21b5-goog
+

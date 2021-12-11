@@ -1,0 +1,59 @@
+[
+    {
+        "comment": "Adds a allowlist of packages that have known memory leaks",
+        "rel_patch_path": "llvm-next-leak-allowlist.v2.patch",
+        "start_version": 370808,
+        "end_version": 414798
+    },
+    {
+        "comment": "Adds a allowlist of packages that have known memory leaks",
+        "rel_patch_path": "llvm-leak-allowlist.v3.patch",
+        "start_version": 414798
+    },
+    {
+        "comment": "Sets the ASAN message to go to /va/log/asan${pid} by\ndefault",
+        "rel_patch_path": "clang-4.0-asan-default-path.patch",
+        "end_version": 408666
+    },
+    {
+        "comment": "Sets the ASAN message to go to /va/log/asan${pid} by\ndefault",
+        "rel_patch_path": "clang-12.0-asan-default-path.patch",
+        "start_version": 408666
+    },
+    {
+        "comment": "[msan] Support %ms in scanf.",
+        "rel_patch_path": "aa57cabae2fc5abc08ab3e17b45f2890fc7c9e42.patch",
+        "start_version": 394483,
+        "end_version": 401725
+    },
+    {
+        "comment": "Fix compiler-rt build on Windows after D89640",
+        "rel_patch_path": "a7acee89d68473183cc5021d952a56cdf0ae27d3.patch",
+        "start_version": 408224,
+        "end_version": 408314
+    },
+    {
+        "comment": "Revert \"[Sanitizers] Remove OpenBSD support\" + 1",
+        "rel_patch_path": "7ecd60bb7022bb681b9dc01a9c232fd93b4b169c.patch",
+        "start_version": 408224,
+        "end_version": 408400
+    },
+    {
+        "comment": "[clang] accept -fsanitize-ignorelist= in addition to -fsanitize-blacklist=",
+        "rel_patch_path": "d7ec48d71bd67118e7996c45e9c7fb1b09d4f59a.patch",
+        "start_version": 422132,
+        "end_version": 426368
+    },
+    {
+        "comment": "Revert \"[cmake] [compiler-rt] Call llvm_setup_rpath() when adding shared libraries.\"",
+        "rel_patch_path": "21c008d5a5b1e0c2ec3c1659cff961f4b0ccea2c.patch",
+        "start_version": 428724,
+        "end_version": 430742
+    },
+    {
+        "comment": "[compiler-rt] [builtins] [AArch64] Add missing AArch64 data synchronization barrier (dsb) to __clear_cache",
+        "rel_patch_path": "6455418d3d2a2de1a8251cc2ccf2e87b9ae3112d.patch",
+        "start_version": 428724,
+        "end_version": 429795
+    }
+]

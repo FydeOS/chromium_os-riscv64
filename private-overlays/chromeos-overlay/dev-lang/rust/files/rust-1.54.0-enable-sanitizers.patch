@@ -1,0 +1,193 @@
+From 8edc417bba3b115dea0716426404ff1984b9e1fe Mon Sep 17 00:00:00 2001
+From: George Burgess IV <gbiv@google.com>
+Date: Sun, 1 Aug 2021 07:24:52 +0000
+Subject: [PATCH 1/8] enable-sanitizers.patch
+
+---
+ compiler/rustc_codegen_llvm/src/attributes.rs        |  4 ++--
+ compiler/rustc_codegen_ssa/src/back/link.rs          |  4 ++--
+ compiler/rustc_codegen_ssa/src/back/symbol_export.rs |  2 +-
+ compiler/rustc_codegen_ssa/src/back/write.rs         |  2 +-
+ compiler/rustc_session/src/config.rs                 |  2 +-
+ compiler/rustc_session/src/options.rs                |  4 ++--
+ compiler/rustc_session/src/session.rs                | 12 ++++++------
+ .../src/spec/armv7a_cros_linux_gnueabihf.rs          |  8 ++++++--
+ 8 files changed, 21 insertions(+), 17 deletions(-)
+
+diff --git a/compiler/rustc_codegen_llvm/src/attributes.rs b/compiler/rustc_codegen_llvm/src/attributes.rs
+index f1c45d8dc..d5fdb6416 100644
+--- a/compiler/rustc_codegen_llvm/src/attributes.rs
++++ b/compiler/rustc_codegen_llvm/src/attributes.rs
+@@ -42,7 +42,7 @@ fn inline(cx: &CodegenCx<'ll, '_>, val: &'ll Value, inline: InlineAttr) {
+ /// Apply LLVM sanitize attributes.
+ #[inline]
+ pub fn sanitize(cx: &CodegenCx<'ll, '_>, no_sanitize: SanitizerSet, llfn: &'ll Value) {
+-    let enabled = cx.tcx.sess.opts.debugging_opts.sanitizer - no_sanitize;
++    let enabled = cx.tcx.sess.opts.cg.sanitizer - no_sanitize;
+     if enabled.contains(SanitizerSet::ADDRESS) {
+         llvm::Attribute::SanitizeAddress.apply_llfn(Function, llfn);
+     }
+@@ -107,7 +107,7 @@ fn set_probestack(cx: &CodegenCx<'ll, '_>, llfn: &'ll Value) {
+     if cx
+         .sess()
+         .opts
+-        .debugging_opts
++        .cg
+         .sanitizer
+         .intersects(SanitizerSet::ADDRESS | SanitizerSet::THREAD)
+     {
+diff --git a/compiler/rustc_codegen_ssa/src/back/link.rs b/compiler/rustc_codegen_ssa/src/back/link.rs
+index 6c9ec9e7b..0be107fee 100644
+--- a/compiler/rustc_codegen_ssa/src/back/link.rs
++++ b/compiler/rustc_codegen_ssa/src/back/link.rs
+@@ -1106,7 +1106,7 @@ fn add_sanitizer_libraries(sess: &Session, crate_type: CrateType, linker: &mut d
+         return;
+     }
+ 
+-    let sanitizer = sess.opts.debugging_opts.sanitizer;
++    let sanitizer = sess.opts.cg.sanitizer;
+     if sanitizer.contains(SanitizerSet::ADDRESS) {
+         link_sanitizer_runtime(sess, linker, "asan");
+     }
+@@ -1934,7 +1934,7 @@ fn add_order_independent_options(
+     add_link_script(cmd, sess, tmpdir, crate_type);
+ 
+     if sess.target.is_like_fuchsia && crate_type == CrateType::Executable {
+-        let prefix = if sess.opts.debugging_opts.sanitizer.contains(SanitizerSet::ADDRESS) {
++        let prefix = if sess.opts.cg.sanitizer.contains(SanitizerSet::ADDRESS) {
+             "asan/"
+         } else {
+             ""
+diff --git a/compiler/rustc_codegen_ssa/src/back/symbol_export.rs b/compiler/rustc_codegen_ssa/src/back/symbol_export.rs
+index b2ecc3b0f..cad8ad923 100644
+--- a/compiler/rustc_codegen_ssa/src/back/symbol_export.rs
++++ b/compiler/rustc_codegen_ssa/src/back/symbol_export.rs
+@@ -202,7 +202,7 @@ fn exported_symbols_provider_local(
+         }));
+     }
+ 
+-    if tcx.sess.opts.debugging_opts.sanitizer.contains(SanitizerSet::MEMORY) {
++    if tcx.sess.opts.cg.sanitizer.contains(SanitizerSet::MEMORY) {
+         // Similar to profiling, preserve weak msan symbol during LTO.
+         const MSAN_WEAK_SYMBOLS: [&str; 2] = ["__msan_track_origins", "__msan_keep_going"];
+ 
+diff --git a/compiler/rustc_codegen_ssa/src/back/write.rs b/compiler/rustc_codegen_ssa/src/back/write.rs
+index ff4e64095..095b9160a 100644
+--- a/compiler/rustc_codegen_ssa/src/back/write.rs
++++ b/compiler/rustc_codegen_ssa/src/back/write.rs
+@@ -186,7 +186,7 @@ impl ModuleConfig {
+                 false
+             ),
+ 
+-            sanitizer: if_regular!(sess.opts.debugging_opts.sanitizer, SanitizerSet::empty()),
++            sanitizer: if_regular!(sess.opts.cg.sanitizer, SanitizerSet::empty()),
+             sanitizer_recover: if_regular!(
+                 sess.opts.debugging_opts.sanitizer_recover,
+                 SanitizerSet::empty()
+diff --git a/compiler/rustc_session/src/config.rs b/compiler/rustc_session/src/config.rs
+index 2b547f8be..d8ce6a153 100644
+--- a/compiler/rustc_session/src/config.rs
++++ b/compiler/rustc_session/src/config.rs
+@@ -861,7 +861,7 @@ fn default_configuration(sess: &Session) -> CrateConfig {
+     let panic_strategy = sess.panic_strategy();
+     ret.insert((sym::panic, Some(panic_strategy.desc_symbol())));
+ 
+-    for s in sess.opts.debugging_opts.sanitizer {
++    for s in sess.opts.cg.sanitizer {
+         let symbol = Symbol::intern(&s.to_string());
+         ret.insert((sym::sanitize, Some(symbol)));
+     }
+diff --git a/compiler/rustc_session/src/options.rs b/compiler/rustc_session/src/options.rs
+index 1946bfd78..099cf7499 100644
+--- a/compiler/rustc_session/src/options.rs
++++ b/compiler/rustc_session/src/options.rs
+@@ -966,6 +966,8 @@ options! {
+         "print remarks for these optimization passes (space separated, or \"all\")"),
+     rpath: bool = (false, parse_bool, [UNTRACKED],
+         "set rpath values in libs/exes (default: no)"),
++    sanitizer: SanitizerSet = (SanitizerSet::empty(), parse_sanitizers, [TRACKED],
++        "use a sanitizer"),
+     save_temps: bool = (false, parse_bool, [UNTRACKED],
+         "save all temporary output files during compilation (default: no)"),
+     soft_float: bool = (false, parse_bool, [TRACKED],
+@@ -1218,8 +1220,6 @@ options! {
+         to rust's source base directory. only meant for testing purposes"),
+     report_delayed_bugs: bool = (false, parse_bool, [TRACKED],
+         "immediately print bugs registered with `delay_span_bug` (default: no)"),
+-    sanitizer: SanitizerSet = (SanitizerSet::empty(), parse_sanitizers, [TRACKED],
+-        "use a sanitizer"),
+     sanitizer_memory_track_origins: usize = (0, parse_sanitizer_memory_track_origins, [TRACKED],
+         "enable origins tracking in MemorySanitizer"),
+     sanitizer_recover: SanitizerSet = (SanitizerSet::empty(), parse_sanitizers, [TRACKED],
+diff --git a/compiler/rustc_session/src/session.rs b/compiler/rustc_session/src/session.rs
+index 86b8389a6..b4b0f3ec3 100644
+--- a/compiler/rustc_session/src/session.rs
++++ b/compiler/rustc_session/src/session.rs
+@@ -720,7 +720,7 @@ impl Session {
+             let more_names = self.opts.output_types.contains_key(&OutputType::LlvmAssembly)
+                 || self.opts.output_types.contains_key(&OutputType::Bitcode)
+                 // AddressSanitizer and MemorySanitizer use alloca name when reporting an issue.
+-                || self.opts.debugging_opts.sanitizer.intersects(SanitizerSet::ADDRESS | SanitizerSet::MEMORY);
++                || self.opts.cg.sanitizer.intersects(SanitizerSet::ADDRESS | SanitizerSet::MEMORY);
+             !more_names
+         }
+     }
+@@ -1091,7 +1091,7 @@ impl Session {
+         // AddressSanitizer uses lifetimes to detect use after scope bugs.
+         // MemorySanitizer uses lifetimes to detect use of uninitialized stack variables.
+         // HWAddressSanitizer will use lifetimes to detect use after scope bugs in the future.
+-        || self.opts.debugging_opts.sanitizer.intersects(SanitizerSet::ADDRESS | SanitizerSet::MEMORY | SanitizerSet::HWADDRESS)
++        || self.opts.cg.sanitizer.intersects(SanitizerSet::ADDRESS | SanitizerSet::MEMORY | SanitizerSet::HWADDRESS)
+     }
+ 
+     pub fn link_dead_code(&self) -> bool {
+@@ -1499,7 +1499,7 @@ fn validate_commandline_args_with_session_available(sess: &Session) {
+ 
+     // Sanitizers can only be used on platforms that we know have working sanitizer codegen.
+     let supported_sanitizers = sess.target.options.supported_sanitizers;
+-    let unsupported_sanitizers = sess.opts.debugging_opts.sanitizer - supported_sanitizers;
++    let unsupported_sanitizers = sess.opts.cg.sanitizer - supported_sanitizers;
+     match unsupported_sanitizers.into_iter().count() {
+         0 => {}
+         1 => sess
+@@ -1510,13 +1510,13 @@ fn validate_commandline_args_with_session_available(sess: &Session) {
+         )),
+     }
+     // Cannot mix and match sanitizers.
+-    let mut sanitizer_iter = sess.opts.debugging_opts.sanitizer.into_iter();
++    let mut sanitizer_iter = sess.opts.cg.sanitizer.into_iter();
+     if let (Some(first), Some(second)) = (sanitizer_iter.next(), sanitizer_iter.next()) {
+-        sess.err(&format!("`-Zsanitizer={}` is incompatible with `-Zsanitizer={}`", first, second));
++        sess.err(&format!("`-Csanitizer={}` is incompatible with `-Csanitizer={}`", first, second));
+     }
+ 
+     // Cannot enable crt-static with sanitizers on Linux
+-    if sess.crt_static(None) && !sess.opts.debugging_opts.sanitizer.is_empty() {
++    if sess.crt_static(None) && !sess.opts.cg.sanitizer.is_empty() {
+         sess.err(
+             "Sanitizer is incompatible with statically linked libc, \
+                                 disable it using `-C target-feature=-crt-static`",
+diff --git a/compiler/rustc_target/src/spec/armv7a_cros_linux_gnueabihf.rs b/compiler/rustc_target/src/spec/armv7a_cros_linux_gnueabihf.rs
+index 5f0f47dd3..4a1ab82f3 100644
+--- a/compiler/rustc_target/src/spec/armv7a_cros_linux_gnueabihf.rs
++++ b/compiler/rustc_target/src/spec/armv7a_cros_linux_gnueabihf.rs
+@@ -1,10 +1,14 @@
+-use crate::spec::{Target, TargetOptions};
++use crate::spec::{SanitizerSet, Target, TargetOptions};
+ 
+ // This target is for glibc Linux on ARMv7 without NEON or
+ // thumb-mode. See the thumbv7neon variant for enabling both.
+ 
+ pub fn target() -> Target {
+-    let base = super::linux_gnu_base::opts();
++    let mut base = super::linux_gnu_base::opts();
++    base.supported_sanitizers = SanitizerSet::ADDRESS
++        | SanitizerSet::LEAK
++        | SanitizerSet::MEMORY
++        | SanitizerSet::THREAD;
+     Target {
+         llvm_target: "armv7-unknown-linux-gnueabihf".to_string(),
+         pointer_width: 32,
+-- 
+2.32.0.554.ge1b32706d8-goog
+

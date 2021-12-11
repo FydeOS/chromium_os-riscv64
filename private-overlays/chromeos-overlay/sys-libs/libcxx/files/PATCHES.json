@@ -1,0 +1,49 @@
+[
+    {
+        "comment": "Link libcxx with gcc_eh when linking with gcc_s is not desired",
+        "rel_patch_path": "libcxx-10-use-libgcc_eh.patch",
+        "start_version": 374056,
+        "end_version": 392069
+    },
+    {
+        "comment": "Link libcxx with gcc_eh when linking with gcc_s is not desired",
+        "rel_patch_path": "libcxx-11-use-libgcc_eh.patch",
+        "start_version": 392069,
+        "end_version": 419078
+    },
+    {
+        "comment": "[libc++] Add missing visibility annotation for __base",
+        "rel_patch_path": "cherry/30ccc2e8d24b53273aae9cc21740f02ffb3018dc.patch",
+        "end_version": 387601
+    },
+    {
+        "comment": "[libc++] [P0879] constexpr std::sort",
+        "rel_patch_path": "493f1407927cdf6db2e08f150ed9f9b8abe4ac45.patch",
+        "start_version": 417943,
+        "end_version": 417956
+    },
+    {
+        "comment": "[libc++] Further improve the contiguous-iterator story, and fix some bugs.",
+        "rel_patch_path": "85167fb7c2920ca8874b197ef397e8e6b9d87c73.patch",
+        "start_version": 417943,
+        "end_version": 418174
+    },
+    {
+        "comment": "Disable CFI in __get_elem to allow casting a pointer to uninitialized memory",
+        "rel_patch_path": "bab74864168bb5e28ecbc0294fe1095d8da7f569.patch",
+        "start_version": 415517,
+        "end_version": 417837
+    },
+    {
+        "comment": "[libcxx][atomic] Fix failure mapping in compare_exchange_{strong,weak}.",
+        "rel_patch_path": "6d33362dafb66b3af4717990d9a06450ec13f367.patch",
+        "start_version": 428724,
+        "end_version": 430140
+    },
+    {
+        "comment": "Revert \"[libc++] NFC: Move unwrap_iter to its own header\"",
+        "rel_patch_path": "b13edf6e907b32d0b8da09dfe08fa271638eca3c.patch",
+        "start_version": 428724,
+        "end_version": 428763
+    }
+]

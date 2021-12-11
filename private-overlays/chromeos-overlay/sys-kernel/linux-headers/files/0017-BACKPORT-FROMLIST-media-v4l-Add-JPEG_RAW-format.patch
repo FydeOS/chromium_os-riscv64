@@ -1,0 +1,32 @@
+From 8865b436da4e3cf68e69aa553fbc004e7d060c9e Mon Sep 17 00:00:00 2001
+From: Moja Hsu <mojahsu@chromium.org>
+Date: Mon, 06 Aug 2018 13:27:59 +0800
+Subject: [PATCH] BACKPORT: FROMLIST: media: Add JPEG_RAW format
+
+Add V4L2_PIX_FMT_JPEG_RAW format that does not contain
+JPEG header in the output frame.
+
+Signed-off-by: Shunqian Zheng <zhengsq@rock-chips.com>
+Signed-off-by: Ezequiel Garcia <ezequiel@collabora.com>
+(am from https://patchwork.linuxtv.org/patch/51340/)
+Skip Documentation/media/uapi/v4l/pixfmt-compressed.rst
+
+BUG=none
+TEST=none
+
+Change-Id: Iaf18a850f479e3b13afc628e2e3a20cf6f1a6471
+Signed-off-by: Moja Hsu <mojahsu@chromium.org>
+---
+
+diff --git a/include/uapi/linux/videodev2.h b/include/uapi/linux/videodev2.h
+index 0a8b5f2..81bd3f6 100644
+--- a/include/uapi/linux/videodev2.h
++++ b/include/uapi/linux/videodev2.h
+@@ -588,6 +588,7 @@
+ /* compressed formats */
+ #define V4L2_PIX_FMT_MJPEG    v4l2_fourcc('M', 'J', 'P', 'G') /* Motion-JPEG   */
+ #define V4L2_PIX_FMT_JPEG     v4l2_fourcc('J', 'P', 'E', 'G') /* JFIF JPEG     */
++#define V4L2_PIX_FMT_JPEG_RAW v4l2_fourcc('J', 'P', 'G', 'R') /* JFIF JPEG RAW without headers */
+ #define V4L2_PIX_FMT_DV       v4l2_fourcc('d', 'v', 's', 'd') /* 1394          */
+ #define V4L2_PIX_FMT_MPEG     v4l2_fourcc('M', 'P', 'E', 'G') /* MPEG-1/2/4 Multiplexed */
+ #define V4L2_PIX_FMT_H264     v4l2_fourcc('H', '2', '6', '4') /* H264 with start codes */

@@ -1,0 +1,59 @@
+diff --git a/eclass/cros-go.eclass b/eclass/cros-go.eclass
+index 6d33057b9a53..4321be9bc340 100644
+--- a/eclass/cros-go.eclass
++++ b/eclass/cros-go.eclass
+@@ -282,12 +282,27 @@ cros-go_gopath() {
+ 	echo "$(cros-go_workspace):${SYSROOT}/usr/lib/gopath"
+ }
+ 
++is_goarch_riscv() {
++	[[ "$($(tc-getGO) env GOARCH)" == riscv* ]]
++}
++
++cros_go_riscv() {
++	GOPATH="$(cros-go_gopath)" GO111MODULE=auto \
++	CGO_CFLAGS="-g -O2 -mno-relax" \
++	CGO_CXXFLAGS="-g -O2 -mno-relax" $(tc-getGO) "$@" || die
++}
++
+ # @FUNCTION: cros_go
+ # @DESCRIPTION:
+ # Wrapper function for invoking the Go tool from an ebuild.
+ # Sets up GOPATH, and uses the appropriate cross-compiler.
+ cros_go() {
+-	GOPATH="$(cros-go_gopath)" $(tc-getGO) "$@" || die
++	if is_goarch_riscv; then
++		cros_go_riscv "$@"
++	else
++		GOPATH="$(cros-go_gopath)" GO111MODULE=auto \
++		$(tc-getGO) "$@" || die
++	fi
+ }
+ 
+ # @FUNCTION: go_list
+@@ -295,7 +310,7 @@ cros_go() {
+ # List all Go packages matching a pattern.
+ # Only list packages in the current workspace.
+ go_list() {
+-	GOPATH="$(cros-go_workspace)" $(tc-getGO) list "$@" || die
++	GOPATH="$(cros-go_workspace)" GO111MODULE=off $(tc-getGO) list "$@" || die
+ }
+ 
+ # @FUNCTION: go_test
+@@ -303,14 +318,14 @@ go_list() {
+ # Wrapper function for building and running unit tests.
+ # Package tests are always built and run locally on host.
+ go_test() {
+-	GOPATH="$(cros-go_gopath)" $(tc-getBUILD_GO) test "$@" || die
++	GOPATH="$(cros-go_gopath)" GO111MODULE=off $(tc-getBUILD_GO) test "$@" || die
+ }
+ 
+ # @FUNCTION: go_vet
+ # @DESCRIPTION:
+ # Wrapper function for running "go vet".
+ go_vet() {
+-	GOPATH="$(cros-go_gopath)" $(tc-getBUILD_GO) vet \
++	GOPATH="$(cros-go_gopath)" GO111MODULE=off $(tc-getBUILD_GO) vet \
+ 		"${CROS_GO_VET_FLAGS[@]}" "$@" || die
+ }
+ 

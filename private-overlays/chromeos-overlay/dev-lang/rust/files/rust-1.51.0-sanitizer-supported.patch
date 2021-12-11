@@ -1,0 +1,31 @@
+Ensure that sanitizer runtimes are built for all our supported x86_64
+platforms.
+
+Now that we patch in our own custom -cros and -pc targets instead
+of falling back to -unknown, we need to add builds for those
+targets as well to allow the linker to find the correct versions
+of the librustc_[almt]san static libraries.
+
+diff --git a/src/bootstrap/native.rs b/src/bootstrap/native.rs
+index 97d9dbdd63f..d81c5e60608 100644
+--- a/src/bootstrap/native.rs
++++ b/src/bootstrap/native.rs
+@@ -790,13 +790,16 @@ fn supported_sanitizers(
+ 
+     match &*target.triple {
+         "aarch64-fuchsia" => common_libs("fuchsia", "aarch64", &["asan"]),
+-        "aarch64-unknown-linux-gnu" => {
++        "aarch64-unknown-linux-gnu" | "aarch64-cros-linux-gnu" => {
+             common_libs("linux", "aarch64", &["asan", "lsan", "msan", "tsan"])
+         }
++        "armv7a-cros-linux-gnueabihf" => {
++            common_libs("linux", "armhf", &["asan"])
++        }
+         "x86_64-apple-darwin" => darwin_libs("osx", &["asan", "lsan", "tsan"]),
+         "x86_64-fuchsia" => common_libs("fuchsia", "x86_64", &["asan"]),
+         "x86_64-unknown-freebsd" => common_libs("freebsd", "x86_64", &["asan", "msan", "tsan"]),
+-        "x86_64-unknown-linux-gnu" => {
++        "x86_64-unknown-linux-gnu" | "x86_64-cros-linux-gnu" | "x86_64-pc-linux-gnu" => {
+             common_libs("linux", "x86_64", &["asan", "lsan", "msan", "tsan"])
+         }
+         _ => Vec::new(),

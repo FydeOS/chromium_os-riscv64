@@ -1,0 +1,55 @@
+diff --git a/lib/sysroot_lib.py b/lib/sysroot_lib.py
+index ea1465be2..d302a5263 100644
+--- a/lib/sysroot_lib.py
++++ b/lib/sysroot_lib.py
+@@ -78,6 +78,21 @@ export PKG_CONFIG_SYSROOT_DIR="{sysroot}"
+ # Undo that logic.
+ unset PKG_CONFIG_PATH
+ 
++# Use full path to bypass automated wrapper checks that block `pkg-config`.
++# https://crbug.com/985180
++exec /usr/bin/pkg-config "$@"
++"""
++_PKGCONFIG_WRAPPER_TEMPLATE_RISCV = """#!/bin/bash
++
++PKG_CONFIG_LIBDIR=$(printf '%s:' "{sysroot}"/usr/*/pkgconfig)
++export PKG_CONFIG_LIBDIR
++
++export PKG_CONFIG_SYSROOT_DIR="{sysroot}"
++
++# Portage will get confused and try to "help" us by exporting this.
++# Undo that logic.
++unset PKG_CONFIG_PATH
++
+ # Use full path to bypass automated wrapper checks that block `pkg-config`.
+ # https://crbug.com/985180
+ exec /usr/bin/pkg-config "$@"
+@@ -450,6 +465,7 @@ class Sysroot(object):
+         added to the command.
+     """
+     chost = self.GetStandardField(STANDARD_FIELD_CHOST)
++    arch = self.GetStandardField(STANDARD_FIELD_ARCH)
+     for cmd in ('ebuild', 'eclean', 'emaint', 'equery', 'portageq', 'qcheck',
+                 'qdepends', 'qfile', 'qlist', 'qmerge', 'qsize'):
+       args = {'sysroot': self.path, 'chost': chost, 'command': cmd}
+@@ -479,10 +495,18 @@ class Sysroot(object):
+       _CreateWrapper(self._WrapperPath('gdb', friendly_name),
+                      _BOARD_WRAPPER_TEMPLATE, board=friendly_name,
+                      command='cros_gdb')
+-      _CreateWrapper(self._WrapperPath('pkg-config', friendly_name),
++      if arch == 'riscv':
++        _CreateWrapper(self._WrapperPath('pkg-config', friendly_name),
++                     _PKGCONFIG_WRAPPER_TEMPLATE_RISCV, sysroot=self.path)
++      else:
++        _CreateWrapper(self._WrapperPath('pkg-config', friendly_name),
+                      _PKGCONFIG_WRAPPER_TEMPLATE, sysroot=self.path)
+ 
+-    _CreateWrapper(self._WrapperPath('pkg-config'),
++    if arch == 'riscv':
++      _CreateWrapper(self._WrapperPath('pkg-config', friendly_name),
++                     _PKGCONFIG_WRAPPER_TEMPLATE_RISCV, sysroot=self.path)
++    else:
++      _CreateWrapper(self._WrapperPath('pkg-config'),
+                    _PKGCONFIG_WRAPPER_TEMPLATE, sysroot=self.path)
+     _CreateWrapper(self._WrapperPath('emerge'), _PORTAGE_WRAPPER_TEMPLATE,
+                    sysroot=self.path, chost=chost, command='emerge --root-deps',

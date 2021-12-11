@@ -1,0 +1,55 @@
+From 1c679fddaacf86ecd48e546a2d9a6b6a624f17bb Mon Sep 17 00:00:00 2001
+From: Grant Hugh <ghugh@google.com>
+Date: Tue, 10 Aug 2021 00:02:51 +0000
+Subject: [PATCH] syz-manager: add hub flag
+
+Added hub flag to syz-manager that will disable the loading of mgr.seeds
+from syzkaller/sys/{OS}/test and will change the hubSyncLoop sync wait
+time from 10 minutes to 3 minutes.
+---
+ syz-manager/hub.go     | 6 +++++-
+ syz-manager/manager.go | 4 ++++
+ 2 files changed, 9 insertions(+), 1 deletion(-)
+
+diff --git a/syz-manager/hub.go b/syz-manager/hub.go
+index f42c71206..ad3da86ab 100644
+--- a/syz-manager/hub.go
++++ b/syz-manager/hub.go
+@@ -57,7 +57,11 @@ type HubManagerView interface {
+ 
+ func (hc *HubConnector) loop() {
+ 	var hub *rpctype.RPCClient
+-	for ; ; time.Sleep(10 * time.Minute) {
++	timeout := 10 * time.Minute
++	if *flagHub {
++		timeout = 3 * time.Minute
++	}
++	for ; ; time.Sleep(timeout) {
+ 		corpus, repros := hc.mgr.getMinimizedCorpus()
+ 		hc.newRepros = append(hc.newRepros, repros...)
+ 		if hub == nil {
+diff --git a/syz-manager/manager.go b/syz-manager/manager.go
+index ae20975df..8a49f38d7 100644
+--- a/syz-manager/manager.go
++++ b/syz-manager/manager.go
+@@ -42,6 +42,7 @@ var (
+ 	flagConfig = flag.String("config", "", "configuration file")
+ 	flagDebug  = flag.Bool("debug", false, "dump all VM output to console")
+ 	flagBench  = flag.String("bench", "", "write execution statistics into this file periodically")
++	flagHub    = flag.Bool("hub", false, "run syz-manager suited to interact with syz-hub")
+ )
+ 
+ type Manager struct {
+@@ -447,6 +448,9 @@ func (mgr *Manager) preloadCorpus() {
+ 	}
+ 	mgr.corpusDB = corpusDB
+ 
++	if *flagHub {
++		return
++	}
+ 	if seedDir := filepath.Join(mgr.cfg.Syzkaller, "sys", mgr.cfg.TargetOS, "test"); osutil.IsExist(seedDir) {
+ 		seeds, err := ioutil.ReadDir(seedDir)
+ 		if err != nil {
+-- 
+2.33.0.rc1.237.g0d66db33f3-goog
+

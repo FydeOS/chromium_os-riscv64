@@ -1,0 +1,35 @@
+Because of crbug.com/711369, armv7 target triple's arch and ABI parts differ
+between chromeos and the rust. Until that bug is fixed, we have to add our own
+triple for armv7.
+
+Additionally, the Rust compiler does not implement a fallback for unknown
+target triple vendors (e.g. "cros" or "pc") to the "unknown" variant, so we
+add copies of the relevant cros targets here as well.
+
+diff --git a/compiler/rustc_target/src/spec/mod.rs b/compiler/rustc_target/src/spec/mod.rs
+index 67f45d3d230..51e0eef6630 100644
+--- a/compiler/rustc_target/src/spec/mod.rs
++++ b/compiler/rustc_target/src/spec/mod.rs
+@@ -335,6 +335,8 @@ macro_rules! supported_targets {
+ supported_targets! {
+     ("x86_64-unknown-linux-gnu", x86_64_unknown_linux_gnu),
+     ("x86_64-unknown-linux-gnux32", x86_64_unknown_linux_gnux32),
++    ("x86_64-pc-linux-gnu", x86_64_pc_linux_gnu),
++    ("x86_64-cros-linux-gnu", x86_64_cros_linux_gnu),
+     ("i686-unknown-linux-gnu", i686_unknown_linux_gnu),
+     ("i586-unknown-linux-gnu", i586_unknown_linux_gnu),
+     ("mips-unknown-linux-gnu", mips_unknown_linux_gnu),
+@@ -364,11 +366,13 @@ supported_targets! {
+     ("armv5te-unknown-linux-musleabi", armv5te_unknown_linux_musleabi),
+     ("armv7-unknown-linux-gnueabi", armv7_unknown_linux_gnueabi),
+     ("armv7-unknown-linux-gnueabihf", armv7_unknown_linux_gnueabihf),
++    ("armv7a-cros-linux-gnueabihf", armv7a_cros_linux_gnueabihf),
+     ("thumbv7neon-unknown-linux-gnueabihf", thumbv7neon_unknown_linux_gnueabihf),
+     ("thumbv7neon-unknown-linux-musleabihf", thumbv7neon_unknown_linux_musleabihf),
+     ("armv7-unknown-linux-musleabi", armv7_unknown_linux_musleabi),
+     ("armv7-unknown-linux-musleabihf", armv7_unknown_linux_musleabihf),
+     ("aarch64-unknown-linux-gnu", aarch64_unknown_linux_gnu),
++    ("aarch64-cros-linux-gnu", aarch64_cros_linux_gnu),
+     ("aarch64-unknown-linux-musl", aarch64_unknown_linux_musl),
+     ("x86_64-unknown-linux-musl", x86_64_unknown_linux_musl),
+     ("i686-unknown-linux-musl", i686_unknown_linux_musl),

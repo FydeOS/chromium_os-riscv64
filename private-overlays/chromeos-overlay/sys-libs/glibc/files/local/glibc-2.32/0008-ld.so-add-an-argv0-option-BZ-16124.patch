@@ -1,0 +1,180 @@
+From d4e66780d79ab8f45ef2bb4dd6efdd28b0d00b2e Mon Sep 17 00:00:00 2001
+From: Vincent Mihalkovic <vmihalko@redhat.com>
+Date: Tue, 29 Sep 2020 12:34:39 +0200
+Subject: [PATCH 8/8] ld.so: add an --argv0 option [BZ #16124]
+
+---
+ elf/Makefile          | 12 ++++++++++--
+ elf/argv0test.c       | 31 +++++++++++++++++++++++++++++++
+ elf/rtld.c            | 17 ++++++++++++++++-
+ elf/tst-rtld-argv0.sh | 37 +++++++++++++++++++++++++++++++++++++
+ 4 files changed, 94 insertions(+), 3 deletions(-)
+ create mode 100644 elf/argv0test.c
+ create mode 100755 elf/tst-rtld-argv0.sh
+
+diff --git a/elf/Makefile b/elf/Makefile
+index 355e70037b..4b728a7a7b 100644
+--- a/elf/Makefile
++++ b/elf/Makefile
+@@ -210,7 +210,8 @@ tests += restest1 preloadtest loadfail multiload origtest resolvfail \
+ 	 tst-filterobj tst-filterobj-dlopen tst-auxobj tst-auxobj-dlopen \
+ 	 tst-audit14 tst-audit15 tst-audit16 \
+ 	 tst-single_threaded tst-single_threaded-pthread \
+-	 tst-tls-ie tst-tls-ie-dlmopen
++	 tst-tls-ie tst-tls-ie-dlmopen \
++	 argv0test
+ #	 reldep9
+ tests-internal += loadtest unload unload2 circleload1 \
+ 	 neededtest neededtest2 neededtest3 neededtest4 \
+@@ -414,7 +415,7 @@ endif
+ ifeq (yes,$(build-shared))
+ ifeq ($(run-built-tests),yes)
+ tests-special += $(objpfx)tst-pathopt.out $(objpfx)tst-rtld-load-self.out \
+-		 $(objpfx)tst-rtld-preload.out
++		 $(objpfx)tst-rtld-preload.out $(objpfx)argv0test.out
+ endif
+ tests-special += $(objpfx)check-textrel.out $(objpfx)check-execstack.out \
+ 		 $(objpfx)check-wx-segment.out \
+@@ -1798,3 +1799,10 @@ $(objpfx)tst-tls-ie-dlmopen.out: \
+   $(objpfx)tst-tls-ie-mod6.so
+ 
+ $(objpfx)tst-tls-surplus: $(libdl)
++
++$(objpfx)argv0test.out: tst-rtld-argv0.sh $(objpfx)ld.so \
++			$(objpfx)argv0test
++	$(SHELL) $< $(objpfx)ld.so $(objpfx)argv0test \
++            '$(test-wrapper-env)' '$(run_program_env)' \
++            '$(rpath-link)' 'test-argv0' > $@; \
++    $(evaluate-test)
+diff --git a/elf/argv0test.c b/elf/argv0test.c
+new file mode 100644
+index 0000000000..c22ba5ea70
+--- /dev/null
++++ b/elf/argv0test.c
+@@ -0,0 +1,31 @@
++/* Test for --argv0 option ld.so.
++
++   Copyright (C) 2020 Free Software Foundation, Inc.
++   This file is part of the GNU C Library.
++
++   The GNU C Library is free software; you can redistribute it and/or
++   modify it under the terms of the GNU Lesser General Public
++   License as published by the Free Software Foundation; either
++   version 2.1 of the License, or (at your option) any later version.
++
++   The GNU C Library is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++   Lesser General Public License for more details.
++
++   You should have received a copy of the GNU Lesser General Public
++   License along with the GNU C Library; if not, see
++   <https://www.gnu.org/licenses/>.  */
++
++#include <string.h>
++#include <support/check.h>
++
++static int
++do_test (int argc, char **argv)
++{
++  TEST_COMPARE_STRING (argv[0], "test-argv0");
++  return 0;
++}
++
++#define TEST_FUNCTION_ARGV do_test
++#include <support/test-driver.c>
+diff --git a/elf/rtld.c b/elf/rtld.c
+index a829895b48..4b2e5bf15f 100644
+--- a/elf/rtld.c
++++ b/elf/rtld.c
+@@ -1202,6 +1202,8 @@ dl_main (const ElfW(Phdr) *phdr,
+ 	 installing it.  */
+       rtld_is_main = true;
+ 
++      char *argv0 = NULL;
++
+       /* Note the place where the dynamic linker actually came from.  */
+       GL(dl_rtld_map).l_name = rtld_progname;
+ 
+@@ -1259,6 +1261,14 @@ dl_main (const ElfW(Phdr) *phdr,
+ 	else if (! strcmp (_dl_argv[1], "--preload") && _dl_argc > 2)
+ 	  {
+ 	    preloadarg = _dl_argv[2];
++	    _dl_skip_args += 2;
++	    _dl_argc -= 2;
++	    _dl_argv += 2;
++	  }
++	else if (! strcmp (_dl_argv[1], "--argv0") && _dl_argc > 2)
++	  {
++	    argv0 = _dl_argv[2];
++
+ 	    _dl_skip_args += 2;
+ 	    _dl_argc -= 2;
+ 	    _dl_argv += 2;
+@@ -1292,7 +1302,8 @@ of this helper program; chances are you did not intend to run this program.\n\
+   --inhibit-rpath LIST  ignore RUNPATH and RPATH information in object names\n\
+ 			in LIST\n\
+   --audit LIST          use objects named in LIST as auditors\n\
+-  --preload LIST        preload objects named in LIST\n");
++  --preload LIST        preload objects named in LIST\n\
++  --argv0 STRING        set argv[0] to STRING before running\n");
+ 
+       ++_dl_skip_args;
+       --_dl_argc;
+@@ -1384,6 +1395,10 @@ of this helper program; chances are you did not intend to run this program.\n\
+ 	    break;
+ 	  }
+ #endif
++
++      /* Set the argv[0] string now that we've processed the executable.  */
++      if (argv0 != NULL)
++        _dl_argv[0] = argv0;
+     }
+   else
+     {
+diff --git a/elf/tst-rtld-argv0.sh b/elf/tst-rtld-argv0.sh
+new file mode 100755
+index 0000000000..14d97fb375
+--- /dev/null
++++ b/elf/tst-rtld-argv0.sh
+@@ -0,0 +1,37 @@
++#!/bin/sh
++# Test for --argv0 option ld.so.
++# Copyright (C) 2020 Free Software Foundation, Inc.
++# This file is part of the GNU C Library.
++#
++# The GNU C Library is free software; you can redistribute it and/or
++# modify it under the terms of the GNU Lesser General Public
++# License as published by the Free Software Foundation; either
++# version 2.1 of the License, or (at your option) any later version.
++#
++# The GNU C Library is distributed in the hope that it will be useful,
++# but WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++# Lesser General Public License for more details.
++#
++# You should have received a copy of the GNU Lesser General Public
++# License along with the GNU C Library; if not, see
++# <https://www.gnu.org/licenses/>.
++
++set -e
++
++rtld=$1
++test_program=$2
++test_wrapper_env=$3
++run_program_env=$4
++library_path=$5
++argv0=$6
++
++echo "# [${test_wrapper_env}] [${run_program_env}] [$rtld] [--library-path]" \
++     "[$library_path] [--argv0] [$argv0] [$test_program]"
++${test_wrapper_env} \
++${run_program_env} \
++$rtld --library-path "$library_path" \
++  --argv0 "$argv0" $test_program 2>&1 && rc=0 || rc=$?
++echo "# exit status $rc"
++
++exit $rc
+-- 
+2.30.2
+

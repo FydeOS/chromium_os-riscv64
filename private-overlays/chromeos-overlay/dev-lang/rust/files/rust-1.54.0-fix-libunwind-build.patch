@@ -1,0 +1,99 @@
+libunwind's build.rs expects to run in a directory with no stale object files,
+which isn't always the case. This makes it the case.
+
+Submitted for upstream review in https://github.com/rust-lang/rust/pull/87977
+
+--- a/library/unwind/build.rs
++++ b/library/unwind/build.rs
+@@ -26,8 +26,9 @@ fn main() {
+             // Since ndk r23 beta 3 `libgcc` was replaced with `libunwind` thus
+             // check if we have `libunwind` available and if so use it. Otherwise
+             // fall back to `libgcc` to support older ndk versions.
+-            let has_unwind =
+-                build.is_flag_supported("-lunwind").expect("Unable to invoke compiler");
++            let has_unwind = build
++                .is_flag_supported("-lunwind")
++                .expect("Unable to invoke compiler");
+ 
+             if has_unwind {
+                 println!("cargo:rustc-link-lib=unwind");
+@@ -66,7 +67,19 @@ fn main() {
+ 
+ mod llvm_libunwind {
+     use std::env;
+-    use std::path::Path;
++    use std::path::{Path, PathBuf};
++
++    fn enumerate_object_files_in(out_dir: &Path) -> impl Iterator<Item = PathBuf> {
++        std::fs::read_dir(out_dir).unwrap().filter_map(|entry| {
++            let path = entry.unwrap().path();
++            if let Some(ext) = path.extension() {
++                if ext == "o" {
++                    return Some(path.canonicalize().unwrap());
++                }
++            }
++            None
++        })
++    }
+ 
+     /// Compile the libunwind C/C++ source code.
+     pub fn compile() {
+@@ -76,6 +89,16 @@ mod llvm_libunwind {
+         let mut cpp_cfg = cc::Build::new();
+         let root = Path::new("../../src/llvm-project/libunwind");
+ 
++        // We depend on starting with a fresh build directory each time.
++        let out_dir = PathBuf::from(env::var_os("OUT_DIR").unwrap());
++        for object in enumerate_object_files_in(&out_dir) {
++            if let Err(x) = std::fs::remove_file(&object) {
++                if x.kind() != std::io::ErrorKind::NotFound {
++                    panic!("Failed removing {}: {}", object.display(), x);
++                }
++            }
++        }
++
+         cpp_cfg.cpp(true);
+         cpp_cfg.cpp_set_stdlib(None);
+         cpp_cfg.flag("-nostdinc++");
+@@ -137,7 +160,7 @@ mod llvm_libunwind {
+             "UnwindRegistersSave.S",
+         ];
+ 
+-        let cpp_sources = vec!["Unwind-EHABI.cpp", "Unwind-seh.cpp", "libunwind.cpp"];
++        let cpp_sources = &["Unwind-EHABI.cpp", "Unwind-seh.cpp", "libunwind.cpp"];
+         let cpp_len = cpp_sources.len();
+ 
+         if target.contains("x86_64-fortanix-unknown-sgx") {
+@@ -152,22 +175,19 @@ mod llvm_libunwind {
+             cpp_cfg.file(root.join("src").join(src).canonicalize().unwrap());
+         }
+ 
+-        let out_dir = env::var("OUT_DIR").unwrap();
+-        println!("cargo:rustc-link-search=native={}", &out_dir);
++        println!("cargo:rustc-link-search=native={}", out_dir.display());
+ 
+         cpp_cfg.compile("unwind-cpp");
+-
+-        let mut count = 0;
+-        for entry in std::fs::read_dir(&out_dir).unwrap() {
+-            let obj = entry.unwrap().path().canonicalize().unwrap();
+-            if let Some(ext) = obj.extension() {
+-                if ext == "o" {
+-                    cc_cfg.object(&obj);
+-                    count += 1;
+-                }
+-            }
++        let objects: Vec<PathBuf> = enumerate_object_files_in(&out_dir).collect();
++        assert_eq!(
++            cpp_len,
++            objects.len(),
++            "Can't get object files from {}",
++            out_dir.display()
++        );
++        for obj in objects {
++            cc_cfg.object(obj);
+         }
+-        assert_eq!(cpp_len, count, "Can't get object files from {:?}", &out_dir);
+         cc_cfg.compile("unwind");
+     }
+ }

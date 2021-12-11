@@ -1,0 +1,13 @@
+[
+    {
+        "comment": "Link libcxx with gcc_eh when linking with gcc_s is not desired",
+        "rel_patch_path": "libcxxabi-7-use-libgcc_eh.patch",
+        "end_version": 419078
+    },
+    {
+        "comment": "[Arm][Unwind][libc++abi] Add _Unwind_ForcedUnwind to EHABI.",
+        "rel_patch_path": "db126ae243cd70e4f68fd50a7c619740e90e1dc6.patch",
+        "start_version": 422132,
+        "end_version": 435269
+    }
+]

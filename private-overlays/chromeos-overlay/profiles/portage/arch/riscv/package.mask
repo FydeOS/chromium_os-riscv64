@@ -1,0 +1,6 @@
+# Copyright 2019 Gentoo Authors
+# Distributed under the terms of the GNU General Public License v2
+
+# Doesnt work properly with the two-level libdirs
+# We (fydeos) have to fix it.
+#<dev-lang/python-3.7

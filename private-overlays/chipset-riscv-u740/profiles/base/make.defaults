@@ -1,0 +1,15 @@
+# Copyright 2021 The FydeOS Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+# Author: Yang Tsao<yang@fydeos.io>
+
+VIDEO_CARDS="starfive-drm"
+
+USE=""
+
+USE="${USE} kernel-upstream boot_dts_device_tree transparent_hugepage -acpi_ac"
+USE="${USE} mosys_eventlog opengles"
+USE="${USE} watchdog direncription_allow_v2"
+USE="${USE} -ml_service -scanner -iioservice -fwupd -arc-camera3 -celluar -internal"
+
+COLLISION_IGNORE="/lib/firmware"

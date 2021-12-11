@@ -1,0 +1,53 @@
+From d0cac19f6840ab9c79ae879a241d686457c342b7 Mon Sep 17 00:00:00 2001
+From: Yunlian Jiang <yunlian@google.com>
+Date: Tue, 27 Dec 2016 15:17:21 -0800
+Subject: [PATCH 3/8] Reverts fortify_source warning
+
+Warn if user requests __FORTIFY_SOURCE but it is disabled
+author	Roland Mc Grath <roland@hack.frob.com>
+Tue, 8 May 2012 17:44:57 +0000 (19:44 +0200)
+committer	Andreas Jaeger <jaegerandi@gmail.com>
+Tue, 8 May 2012 17:44:57 +0000 (19:44 +0200)
+commit	05c2c9618f583ea4acd69b3fe5ae2a2922dd2ddc
+tree	cf5cd345bf757fd5296ff7e0b8dcd7f142fc3d37
+parent	4b30f61a1ea78de9b0e84a54fc6ee96ea70e6ed5
+
+The reason to revert it is that some packages that use
+autoconf to detect system headers, the warning will give the
+wrong result.
+
+[Adrian: forward-ported to glibc 2.32]
+---
+ include/features.h | 12 ++++--------
+ 1 file changed, 4 insertions(+), 8 deletions(-)
+
+diff --git a/include/features.h b/include/features.h
+index f3e62d3362..ee9f67c2af 100644
+--- a/include/features.h
++++ b/include/features.h
+@@ -392,18 +392,14 @@
+ # define __USE_GNU	1
+ #endif
+ 
+-#if defined _FORTIFY_SOURCE && _FORTIFY_SOURCE > 0
+-# if !defined __OPTIMIZE__ || __OPTIMIZE__ <= 0
+-#  warning _FORTIFY_SOURCE requires compiling with optimization (-O)
+-# elif !__GNUC_PREREQ (4, 1)
+-#  warning _FORTIFY_SOURCE requires GCC 4.1 or later
+-# elif _FORTIFY_SOURCE > 1
++#if defined _FORTIFY_SOURCE && _FORTIFY_SOURCE > 0 \
++    && __GNUC_PREREQ (4, 1) && defined __OPTIMIZE__ && __OPTIMIZE__ > 0
++# if _FORTIFY_SOURCE > 1
+ #  define __USE_FORTIFY_LEVEL 2
+ # else
+ #  define __USE_FORTIFY_LEVEL 1
+ # endif
+-#endif
+-#ifndef __USE_FORTIFY_LEVEL
++#else
+ # define __USE_FORTIFY_LEVEL 0
+ #endif
+ 
+-- 
+2.30.2
+
