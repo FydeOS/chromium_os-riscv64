@@ -50,9 +50,6 @@ src_prepare() {
 
 src_configure() {
 	unset TERMINFO #115036
-  if use riscv; then
-    append-flags -mno-relax
-  fi
 	tc-export_build_env BUILD_{CC,CPP}
 	BUILD_CPPFLAGS+=" -D_GNU_SOURCE" #214642
 

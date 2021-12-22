@@ -1,0 +1,13 @@
+diff --git a/hooks/filesystem-layout.py b/hooks/filesystem-layout.py
+index d824b00..3f15558 100755
+--- a/hooks/filesystem-layout.py
++++ b/hooks/filesystem-layout.py
+@@ -46,7 +46,7 @@ NOSUBDIRS_ROOT = {
+ # Paths that are allowed in the /usr dir.
+ VALID_USR = {
+     'bin', 'include', 'lib', 'lib32', 'lib64', 'libexec', 'sbin', 'share',
+-    'src',
++    'src', 'lp64d', 'lp64',
+ }
+ 
+ # Paths that are allowed in the /usr dir for boards.

@@ -1,0 +1,26 @@
+Index: gcc-11.2.0/gcc/config/riscv/linux.h
+===================================================================
+--- gcc-11.2.0.orig/gcc/config/riscv/linux.h
++++ gcc-11.2.0/gcc/config/riscv/linux.h
+@@ -72,6 +72,8 @@ along with GCC; see the file COPYING3.
+ #define TARGET_ASM_FILE_END file_end_indicate_exec_stack
+ 
+ #define STARTFILE_PREFIX_SPEC 			\
++   "/lib64/ " \
++   "/usr/lib64/ " \
+    "/lib" XLEN_SPEC "/" ABI_SPEC "/ "		\
+    "/usr/lib" XLEN_SPEC "/" ABI_SPEC "/ "	\
+    "/lib/ "					\
+Index: gcc-11.2.0/gcc/Makefile.in
+===================================================================
+--- gcc-11.2.0.orig/gcc/Makefile.in
++++ gcc-11.2.0/gcc/Makefile.in
+@@ -456,7 +456,7 @@ T_GLIMITS_H = $(srcdir)/glimits.h
+ # The GCC to use for compiling crt*.o.
+ # Usually the one we just built.
+ # Don't use this as a dependency--use $(GCC_PASSES).
+-GCC_FOR_TARGET = $(STAGE_CC_WRAPPER) ./xgcc -B./ -B$(build_tooldir)/bin/ -isystem $(build_tooldir)/include -isystem $(build_tooldir)/sys-include -L$(objdir)/../ld
++GCC_FOR_TARGET = $(STAGE_CC_WRAPPER) ./xgcc -B./ -B$(build_tooldir)/bin/ -B$(build_tooldir)/lib64 -B$(build_tooldir)/usr/lib64 -isystem $(build_tooldir)/include -isystem $(build_tooldir)/sys-include -L$(objdir)/../ld
+ 
+ # Set if the compiler was configured with --with-build-sysroot.
+ SYSROOT_CFLAGS_FOR_TARGET = @SYSROOT_CFLAGS_FOR_TARGET@

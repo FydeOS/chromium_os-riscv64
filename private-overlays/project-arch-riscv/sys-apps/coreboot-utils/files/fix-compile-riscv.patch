@@ -1,0 +1,13 @@
+Index: coreboot-utils-0.0.1/src/commonlib/bsd/lz4_wrapper.c
+===================================================================
+--- coreboot-utils-0.0.1.orig/src/commonlib/bsd/lz4_wrapper.c
++++ coreboot-utils-0.0.1/src/commonlib/bsd/lz4_wrapper.c
+@@ -42,7 +42,7 @@ static void LZ4_copy8(void *dst, const v
+ 	/* RISC-V implementations may trap on any unaligned access. */
+ 	int i;
+ 	for (i = 0; i < 8; i++)
+-		((uint8_t *)dst)[i] = ((uint8_t *)src)[i];
++		((uint8_t *)dst)[i] = ((const uint8_t *)src)[i];
+ #else
+ 	*(uint64_t *)dst = *(const uint64_t *)src;
+ #endif

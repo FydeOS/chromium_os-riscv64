@@ -18,5 +18,5 @@ DEPEND="${RDEPEND}"
 S=${FILESDIR}
 
 src_install() {
-  dosym ${ROOT}/usr/lib64/lp64d/pkgconfig /usr/lib64/pkgconfig
+  dosym /usr/lib64 /usr/lib64/lp64d
 }

@@ -1,0 +1,57 @@
+# Copyright 2017 The Chromium OS Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+# common syscalls:
+recvfrom: 1
+mprotect: 1
+close: 1
+read: 1
+sendto: 1
+# socket: arg0 == PF_FILE || arg0 == PF_INET || arg0 == PF_NETLINK
+socket: arg0 == 1 || arg0 == 2 || arg0 == 16
+clock_gettime: 1
+futex: 1
+brk: 1
+access: 1
+faccessat: 1
+faccessat2: 1
+rt_sigaction: 1
+getsockname: 1
+bind: 1
+munmap: 1
+restart_syscall: 1
+exit: 1
+exit_group: 1
+rt_sigreturn: 1
+lseek: 1
+connect: 1
+rt_sigprocmask: 1
+uname: 1
+umask: 1
+write: 1
+open: 1
+openat: 1
+# ioctl: arg1 == TCGETS
+ioctl: arg1 == 0x5401
+getpriority: 1
+setpriority: 1
+# setsockopt: arg1 == SOL_SOCKET && arg2 == SO_REUSEADDR
+setsockopt: arg1 == 1 && arg2 == 2
+unlink: 1
+listen: 1
+recvmsg: 1
+chdir: 1
+getpid: 1
+gettimeofday: 1
+
+# architecture-dependent syscalls:
+mmap: 1
+newfstatat: 1
+fstat: 1
+fstatfs: 1
+stat: 1
+fcntl: 1
+select: 1
+pselect6: 1
+arch_prctl: 1

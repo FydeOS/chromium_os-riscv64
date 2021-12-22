@@ -1,0 +1,1940 @@
+From 7f0baf118ae65399f2c4b8c7ccb33c69ddf7bc7e Mon Sep 17 00:00:00 2001
+From: Rahul Chaudhry <rahulchaudhry@google.com>
+Date: Tue, 19 Dec 2017 15:31:31 -0800
+Subject: [PATCH 06/14] gold, readelf: add experimental support for SHT_RELR
+ sections.
+
+This change adds experimental support for SHT_RELR sections, proposed
+here: https://groups.google.com/forum/#!topic/generic-abi/bX460iggiKg
+
+SHT_RELR sections are supported for arm, aarch64, and x86_64 targets.
+To enable them, pass '--experimental-use-relr' flag to gold.
+
+Definitions for the new ELF section type and dynamic array tags, as well
+as the encoding used in the new section are all under discussion and are
+subject to change. Use with caution!
+
+This version uses the new encoding suggested by Andrew Grieve which is
+described in this post on generic-abi@googlegroups.com:
+    https://groups.google.com/d/msg/generic-abi/bX460iggiKg/Pi9aSwwABgAJ
+
+Bug: None
+Test: 'gold --experimental-use-relr' creates PIE binaries with
+      '.relr.dyn' sections to store relative relocations.
+
+[Adrian Ratiu: rebased from v2.27 to v2.36.1]
+[Adrian Ratiu: squashed gold: simpler encoding for SHT_RELR sections.]
+---
+ bfd/elf-bfd.h            |   2 +-
+ bfd/elf.c                |  27 +++-
+ bfd/elf32-arm.c          |   1 +
+ bfd/elfcode.h            |   2 +
+ bfd/elfnn-aarch64.c      |   1 +
+ binutils/readelf.c       | 126 +++++++++++++--
+ elfcpp/elfcpp.h          |  55 +++++++
+ elfcpp/elfcpp_internal.h |   6 +
+ gold/aarch64.cc          | 170 +++++++++++++++-----
+ gold/arm.cc              | 156 ++++++++++++++----
+ gold/layout.cc           |  14 +-
+ gold/layout.h            |   3 +-
+ gold/options.h           |   4 +
+ gold/output.cc           |  51 ++++++
+ gold/output.h            | 338 ++++++++++++++++++++++++++++++++++++++-
+ gold/reloc-types.h       |  20 +++
+ gold/x86_64.cc           | 183 +++++++++++++++++----
+ include/elf/common.h     |  11 ++
+ include/elf/external.h   |   8 +
+ 19 files changed, 1057 insertions(+), 121 deletions(-)
+
+diff --git a/bfd/elf-bfd.h b/bfd/elf-bfd.h
+index 15206b4e876..3ea523ddfe3 100644
+--- a/bfd/elf-bfd.h
++++ b/bfd/elf-bfd.h
+@@ -735,7 +735,7 @@ struct elf_link_hash_table
+ 
+ struct elf_size_info {
+   unsigned char sizeof_ehdr, sizeof_phdr, sizeof_shdr;
+-  unsigned char sizeof_rel, sizeof_rela, sizeof_sym, sizeof_dyn, sizeof_note;
++  unsigned char sizeof_rel, sizeof_rela, sizeof_relr, sizeof_sym, sizeof_dyn, sizeof_note;
+ 
+   /* The size of entries in the .hash section.  */
+   unsigned char sizeof_hash_entry;
+diff --git a/bfd/elf.c b/bfd/elf.c
+index 84a5d942817..36de5112d2d 100644
+--- a/bfd/elf.c
++++ b/bfd/elf.c
+@@ -1750,6 +1750,9 @@ _bfd_elf_print_private_bfd_data (bfd *abfd, void *farg)
+ 	    case DT_RELA: name = "RELA"; break;
+ 	    case DT_RELASZ: name = "RELASZ"; break;
+ 	    case DT_RELAENT: name = "RELAENT"; break;
++	    case DT_RELR: name = "RELR"; break;
++	    case DT_RELRSZ: name = "RELRSZ"; break;
++	    case DT_RELRENT: name = "RELRENT"; break;
+ 	    case DT_STRSZ: name = "STRSZ"; break;
+ 	    case DT_SYMENT: name = "SYMENT"; break;
+ 	    case DT_INIT: name = "INIT"; break;
+@@ -1787,6 +1790,7 @@ _bfd_elf_print_private_bfd_data (bfd *abfd, void *farg)
+ 	    case DT_PLTPAD: name = "PLTPAD"; break;
+ 	    case DT_MOVETAB: name = "MOVETAB"; break;
+ 	    case DT_SYMINFO: name = "SYMINFO"; break;
++	    case DT_RELRCOUNT: name = "RELRCOUNT"; break;
+ 	    case DT_RELACOUNT: name = "RELACOUNT"; break;
+ 	    case DT_RELCOUNT: name = "RELCOUNT"; break;
+ 	    case DT_FLAGS_1: name = "FLAGS_1"; break;
+@@ -2342,16 +2346,30 @@ bfd_section_from_shdr (bfd *abfd, unsigned int shindex)
+ 
+     case SHT_REL:
+     case SHT_RELA:
++    case SHT_RELR:
+       /* *These* do a lot of work -- but build no sections!  */
+       {
+ 	asection *target_sect;
+ 	Elf_Internal_Shdr *hdr2, **p_hdr;
+ 	unsigned int num_sec = elf_numsections (abfd);
+ 	struct bfd_elf_section_data *esdt;
++	bfd_size_type size;
+ 
+-	if (hdr->sh_entsize
+-	    != (bfd_size_type) (hdr->sh_type == SHT_REL
+-				? bed->s->sizeof_rel : bed->s->sizeof_rela))
++	switch (hdr->sh_type)
++	{
++        case SHT_REL:
++	  size = bed->s->sizeof_rel;
++	  break;
++        case SHT_RELA:
++	  size = bed->s->sizeof_rela;
++	  break;
++        case SHT_RELR:
++	  size = bed->s->sizeof_relr;
++	  break;
++        default:
++	  goto fail;
++        }
++	if (hdr->sh_entsize  != size)
+ 	  goto fail;
+ 
+ 	/* Check for a bogus link to avoid crashing.  */
+@@ -2421,7 +2439,8 @@ bfd_section_from_shdr (bfd *abfd, unsigned int shindex)
+ 	    || hdr->sh_info == SHN_UNDEF
+ 	    || hdr->sh_info >= num_sec
+ 	    || elf_elfsections (abfd)[hdr->sh_info]->sh_type == SHT_REL
+-	    || elf_elfsections (abfd)[hdr->sh_info]->sh_type == SHT_RELA)
++	    || elf_elfsections (abfd)[hdr->sh_info]->sh_type == SHT_RELA
++	    || elf_elfsections (abfd)[hdr->sh_info]->sh_type == SHT_RELR)
+ 	  {
+ 	    ret = _bfd_elf_make_section_from_shdr (abfd, hdr, name,
+ 						   shindex);
+diff --git a/bfd/elf32-arm.c b/bfd/elf32-arm.c
+index d23f6c07e08..7bdd8c353fc 100644
+--- a/bfd/elf32-arm.c
++++ b/bfd/elf32-arm.c
+@@ -19852,6 +19852,7 @@ const struct elf_size_info elf32_arm_size_info =
+   sizeof (Elf32_External_Shdr),
+   sizeof (Elf32_External_Rel),
+   sizeof (Elf32_External_Rela),
++  sizeof (Elf32_External_Relr),
+   sizeof (Elf32_External_Sym),
+   sizeof (Elf32_External_Dyn),
+   sizeof (Elf_External_Note),
+diff --git a/bfd/elfcode.h b/bfd/elfcode.h
+index 4e99fcc6b9b..1bcc2c7e1ed 100644
+--- a/bfd/elfcode.h
++++ b/bfd/elfcode.h
+@@ -80,6 +80,7 @@
+ #define Elf_External_Phdr	NAME(Elf,External_Phdr)
+ #define Elf_External_Rel	NAME(Elf,External_Rel)
+ #define Elf_External_Rela	NAME(Elf,External_Rela)
++#define Elf_External_Relr	NAME(Elf,External_Relr)
+ #define Elf_External_Dyn	NAME(Elf,External_Dyn)
+ 
+ #define elf_core_file_failing_command	NAME(bfd_elf,core_file_failing_command)
+@@ -1959,6 +1960,7 @@ const struct elf_size_info NAME(_bfd_elf,size_info) = {
+   sizeof (Elf_External_Shdr),
+   sizeof (Elf_External_Rel),
+   sizeof (Elf_External_Rela),
++  sizeof (Elf_External_Relr),
+   sizeof (Elf_External_Sym),
+   sizeof (Elf_External_Dyn),
+   sizeof (Elf_External_Note),
+diff --git a/bfd/elfnn-aarch64.c b/bfd/elfnn-aarch64.c
+index 1ec405ef1e0..dd08a39f917 100644
+--- a/bfd/elfnn-aarch64.c
++++ b/bfd/elfnn-aarch64.c
+@@ -9925,6 +9925,7 @@ const struct elf_size_info elfNN_aarch64_size_info =
+   sizeof (ElfNN_External_Shdr),
+   sizeof (ElfNN_External_Rel),
+   sizeof (ElfNN_External_Rela),
++  sizeof (ElfNN_External_Relr),
+   sizeof (ElfNN_External_Sym),
+   sizeof (ElfNN_External_Dyn),
+   sizeof (Elf_External_Note),
+diff --git a/binutils/readelf.c b/binutils/readelf.c
+index a842ffbd07c..e3cfaee7c0c 100644
+--- a/binutils/readelf.c
++++ b/binutils/readelf.c
+@@ -1162,6 +1162,80 @@ slurp_rel_relocs (Filedata *            filedata,
+   return TRUE;
+ }
+ 
++static bfd_boolean
++slurp_relr_relocs (Filedata * filedata,
++		   unsigned long relr_offset,
++		   unsigned long relr_size,
++		   Elf_Internal_Rela ** relrsp,
++		   unsigned long * nrelrsp)
++{
++  Elf_Internal_Rela * relrs;
++  size_t nrelrs;
++  unsigned int i;
++
++  if (is_32bit_elf)
++    {
++      Elf32_External_Relr * erelrs;
++
++      erelrs = (Elf32_External_Relr *) get_data (NULL, filedata, relr_offset, 1,
++                                                 relr_size, _("32-bit relocation data"));
++      if (!erelrs)
++	return FALSE;
++
++      nrelrs = relr_size / sizeof (Elf32_External_Relr);
++
++      relrs = (Elf_Internal_Rela *) cmalloc (nrelrs, sizeof (Elf_Internal_Rela));
++
++      if (relrs == NULL)
++	{
++	  free (erelrs);
++	  error (_("out of memory parsing relocs\n"));
++	  return FALSE;
++	}
++
++      for (i = 0; i < nrelrs; i++)
++	{
++	  relrs[i].r_offset = BYTE_GET (erelrs[i].r_data);
++	  relrs[i].r_info   = 0;
++	  relrs[i].r_addend = 0;
++	}
++
++      free (erelrs);
++    }
++  else
++    {
++      Elf64_External_Relr * erelrs;
++
++      erelrs = (Elf64_External_Relr *) get_data (NULL, filedata, relr_offset, 1,
++                                                 relr_size, _("64-bit relocation data"));
++      if (!erelrs)
++	return FALSE;
++
++      nrelrs = relr_size / sizeof (Elf64_External_Relr);
++
++      relrs = (Elf_Internal_Rela *) cmalloc (nrelrs, sizeof (Elf_Internal_Rela));
++
++      if (relrs == NULL)
++	{
++	  free (erelrs);
++	  error (_("out of memory parsing relocs\n"));
++	  return FALSE;
++	}
++
++      for (i = 0; i < nrelrs; i++)
++	{
++	  relrs[i].r_offset = BYTE_GET (erelrs[i].r_data);
++	  relrs[i].r_info   = 0;
++	  relrs[i].r_addend = 0;
++	}
++
++      free (erelrs);
++    }
++  *relrsp = relrs;
++  *nrelrsp = nrelrs;
++  return 1;
++}
++
+ /* Returns the reloc type extracted from the reloc info field.  */
+ 
+ static unsigned int
+@@ -1215,6 +1289,7 @@ dump_relocations (Filedata *          filedata,
+ 		  char *              strtab,
+ 		  unsigned long       strtablen,
+ 		  int                 is_rela,
++		  int                 is_relr,
+ 		  bfd_boolean         is_dynsym)
+ {
+   unsigned long i;
+@@ -1229,6 +1304,11 @@ dump_relocations (Filedata *          filedata,
+       if (!slurp_rela_relocs (filedata, rel_offset, rel_size, &rels, &rel_size))
+ 	return FALSE;
+     }
++  else if (is_relr)
++    {
++      if (!slurp_relr_relocs (filedata, rel_offset, rel_size, &rels, &rel_size))
++	return FALSE;
++    }
+   else
+     {
+       if (!slurp_rel_relocs (filedata, rel_offset, rel_size, &rels, &rel_size))
+@@ -1244,6 +1324,13 @@ dump_relocations (Filedata *          filedata,
+ 	  else
+ 	    printf (_(" Offset     Info    Type            Sym.Value  Sym. Name + Addend\n"));
+ 	}
++      else if (is_relr)
++	{
++	  if (do_wide)
++	    printf (_(" Data       Info    Type\n"));
++	  else
++	    printf (_(" Data       Info    Type\n"));
++	}
+       else
+ 	{
+ 	  if (do_wide)
+@@ -1261,6 +1348,13 @@ dump_relocations (Filedata *          filedata,
+ 	  else
+ 	    printf (_("  Offset          Info           Type           Sym. Value    Sym. Name + Addend\n"));
+ 	}
++      else if (is_relr)
++	{
++	  if (do_wide)
++	    printf (_("    Data               Info             Type\n"));
++	  else
++	    printf (_("  Data            Info           Type\n"));
++	}
+       else
+ 	{
+ 	  if (do_wide)
+@@ -1636,7 +1730,9 @@ dump_relocations (Filedata *          filedata,
+ 	  break;
+ 	}
+ 
+-      if (rtype == NULL)
++      if (is_relr)
++        printf (do_wide ? "RELATIVE COMPRESSED" : "RELR");
++      else if (rtype == NULL)
+ 	printf (_("unrecognized: %-7lx"), (unsigned long) type & 0xffffffff);
+       else
+ 	printf (do_wide ? "%-22s" : "%-17.17s", rtype);
+@@ -2177,6 +2273,9 @@ get_dynamic_type (Filedata * filedata, unsigned long type)
+     case DT_REL:	return "REL";
+     case DT_RELSZ:	return "RELSZ";
+     case DT_RELENT:	return "RELENT";
++    case DT_RELR:	return "RELR";
++    case DT_RELRSZ:	return "RELRSZ";
++    case DT_RELRENT:	return "RELRENT";
+     case DT_PLTREL:	return "PLTREL";
+     case DT_DEBUG:	return "DEBUG";
+     case DT_TEXTREL:	return "TEXTREL";
+@@ -2214,6 +2313,7 @@ get_dynamic_type (Filedata * filedata, unsigned long type)
+ 
+     case DT_TLSDESC_GOT: return "TLSDESC_GOT";
+     case DT_TLSDESC_PLT: return "TLSDESC_PLT";
++    case DT_RELRCOUNT:	return "RELRCOUNT";
+     case DT_RELACOUNT:	return "RELACOUNT";
+     case DT_RELCOUNT:	return "RELCOUNT";
+     case DT_FLAGS_1:	return "FLAGS_1";
+@@ -4365,6 +4465,7 @@ get_section_type_name (Filedata * filedata, unsigned int sh_type)
+     case SHT_SYMTAB:		return "SYMTAB";
+     case SHT_STRTAB:		return "STRTAB";
+     case SHT_RELA:		return "RELA";
++    case SHT_RELR:		return "RELR";
+     case SHT_HASH:		return "HASH";
+     case SHT_DYNAMIC:		return "DYNAMIC";
+     case SHT_NOTE:		return "NOTE";
+@@ -7531,12 +7632,14 @@ static struct
+   int reloc;
+   int size;
+   int rela;
++  int relr;
+ }
+   dynamic_relocations [] =
+ {
+-  { "REL", DT_REL, DT_RELSZ, FALSE },
+-  { "RELA", DT_RELA, DT_RELASZ, TRUE },
+-  { "PLT", DT_JMPREL, DT_PLTRELSZ, UNKNOWN }
++  { "REL", DT_REL, DT_RELSZ, FALSE, FALSE },
++  { "RELA", DT_RELA, DT_RELASZ, TRUE, FALSE },
++  { "RELR", DT_RELR, DT_RELRSZ, FALSE, TRUE },
++  { "PLT", DT_JMPREL, DT_PLTRELSZ, UNKNOWN, FALSE }
+ };
+ 
+ /* Process the reloc section.  */
+@@ -7552,7 +7655,7 @@ process_relocs (Filedata * filedata)
+ 
+   if (do_using_dynamic)
+     {
+-      int          is_rela;
++      int          is_rela, is_relr;
+       const char * name;
+       bfd_boolean  has_dynamic_reloc;
+       unsigned int i;
+@@ -7562,6 +7665,7 @@ process_relocs (Filedata * filedata)
+       for (i = 0; i < ARRAY_SIZE (dynamic_relocations); i++)
+ 	{
+ 	  is_rela = dynamic_relocations [i].rela;
++	  is_relr = dynamic_relocations [i].relr;
+ 	  name = dynamic_relocations [i].name;
+ 	  rel_size = filedata->dynamic_info[dynamic_relocations [i].size];
+ 	  rel_offset = filedata->dynamic_info[dynamic_relocations [i].reloc];
+@@ -7596,7 +7700,7 @@ process_relocs (Filedata * filedata)
+ 				filedata->num_dynamic_syms,
+ 				filedata->dynamic_strings,
+ 				filedata->dynamic_strings_length,
+-				is_rela, TRUE /* is_dynamic */);
++				is_rela, is_relr, TRUE /* is_dynamic */);
+ 	    }
+ 	}
+ 
+@@ -7618,7 +7722,8 @@ process_relocs (Filedata * filedata)
+ 	   i++, section++)
+ 	{
+ 	  if (   section->sh_type != SHT_RELA
+-	      && section->sh_type != SHT_REL)
++	      && section->sh_type != SHT_REL
++	      && section->sh_type != SHT_RELR)
+ 	    continue;
+ 
+ 	  rel_offset = section->sh_offset;
+@@ -7626,7 +7731,7 @@ process_relocs (Filedata * filedata)
+ 
+ 	  if (rel_size)
+ 	    {
+-	      int is_rela;
++	      int is_rela, is_relr;
+ 	      unsigned long num_rela;
+ 
+ 	      printf (_("\nRelocation section "));
+@@ -7643,6 +7748,7 @@ process_relocs (Filedata * filedata)
+ 		      rel_offset, num_rela);
+ 
+ 	      is_rela = section->sh_type == SHT_RELA;
++	      is_relr = section->sh_type == SHT_RELR;
+ 
+ 	      if (section->sh_link != 0
+ 		  && section->sh_link < filedata->file_header.e_shnum)
+@@ -7664,14 +7770,14 @@ process_relocs (Filedata * filedata)
+ 
+ 		  dump_relocations (filedata, rel_offset, rel_size,
+ 				    symtab, nsyms, strtab, strtablen,
+-				    is_rela,
++				    is_rela, is_relr,
+ 				    symsec->sh_type == SHT_DYNSYM);
+ 		  free (strtab);
+ 		  free (symtab);
+ 		}
+ 	      else
+ 		dump_relocations (filedata, rel_offset, rel_size,
+-				  NULL, 0, NULL, 0, is_rela,
++				  NULL, 0, NULL, 0, is_rela, is_relr,
+ 				  FALSE /* is_dynamic */);
+ 
+ 	      found = TRUE;
+diff --git a/elfcpp/elfcpp.h b/elfcpp/elfcpp.h
+index fdee7ce3b8b..72e8848f361 100644
+--- a/elfcpp/elfcpp.h
++++ b/elfcpp/elfcpp.h
+@@ -386,6 +386,10 @@ enum SHT
+   SHT_SUNW_versym = 0x6fffffff,
+   SHT_GNU_versym = 0x6fffffff,
+ 
++  // Experimental support for SHT_RELR sections. For details, see proposal
++  // at https://groups.google.com/forum/#!topic/generic-abi/bX460iggiKg
++  SHT_RELR = 0x6fffff00,
++
+   SHT_SPARC_GOTDATA = 0x70000000,
+ 
+   // ARM-specific section types.
+@@ -771,6 +775,13 @@ enum DT
+ 
+   DT_VERSYM = 0x6ffffff0,
+ 
++  // Experimental support for SHT_RELR sections. For details, see proposal
++  // at https://groups.google.com/forum/#!topic/generic-abi/bX460iggiKg
++  DT_RELR = 0x6fffe000,
++  DT_RELRSZ = 0x6fffe001,
++  DT_RELRENT = 0x6fffe003,
++  DT_RELRCOUNT = 0x6fffe005,
++
+   // Specify the value of _GLOBAL_OFFSET_TABLE_.
+   DT_PPC_GOT = 0x70000000,
+ 
+@@ -1071,6 +1082,7 @@ struct Elf_sizes
+   // Sizes of ELF reloc entries.
+   static const int rel_size = sizeof(internal::Rel_data<size>);
+   static const int rela_size = sizeof(internal::Rela_data<size>);
++  static const int relr_size = sizeof(internal::Relr_data<size>);
+   // Size of ELF dynamic entry.
+   static const int dyn_size = sizeof(internal::Dyn_data<size>);
+   // Size of ELF version structures.
+@@ -1741,6 +1753,49 @@ class Rela_write
+   internal::Rela_data<size>* p_;
+ };
+ 
++// Accessor class for an ELF Relr relocation.
++
++template<int size, bool big_endian>
++class Relr
++{
++ public:
++  Relr(const unsigned char* p)
++    : p_(reinterpret_cast<const internal::Relr_data<size>*>(p))
++  { }
++
++  template<typename File>
++  Relr(File* file, typename File::Location loc)
++    : p_(reinterpret_cast<const internal::Relr_data<size>*>(
++	   file->view(loc.file_offset, loc.data_size).data()))
++  { }
++
++  typename Elf_types<size>::Elf_Addr
++  get_r_data() const
++  { return Convert<size, big_endian>::convert_host(this->p_->r_data); }
++
++ private:
++  const internal::Relr_data<size>* p_;
++};
++
++// Writer class for an ELF Relr relocation.
++
++template<int size, bool big_endian>
++class Relr_write
++{
++ public:
++  Relr_write(unsigned char* p)
++    : p_(reinterpret_cast<internal::Relr_data<size>*>(p))
++  { }
++
++  void
++  put_r_data(typename Elf_types<size>::Elf_Addr v)
++  { this->p_->r_data = Convert<size, big_endian>::convert_host(v); }
++
++ private:
++  internal::Relr_data<size>* p_;
++};
++
++
+ // MIPS-64 has a non-standard relocation layout.
+ 
+ template<bool big_endian>
+diff --git a/elfcpp/elfcpp_internal.h b/elfcpp/elfcpp_internal.h
+index 4aa4428dca3..3289550b689 100644
+--- a/elfcpp/elfcpp_internal.h
++++ b/elfcpp/elfcpp_internal.h
+@@ -180,6 +180,12 @@ struct Rela_data
+   typename Elf_types<size>::Elf_Swxword r_addend;
+ };
+ 
++template<int size>
++struct Relr_data
++{
++  typename Elf_types<size>::Elf_WXword r_data;
++};
++
+ // MIPS-64 has a non-standard layout for relocations.
+ 
+ struct Mips64_rel_data
+diff --git a/gold/aarch64.cc b/gold/aarch64.cc
+index 33485de61f6..d5cf625cecd 100644
+--- a/gold/aarch64.cc
++++ b/gold/aarch64.cc
+@@ -2899,6 +2899,8 @@ class Target_aarch64 : public Sized_target<size, big_endian>
+   typedef Target_aarch64<size, big_endian> This;
+   typedef Output_data_reloc<elfcpp::SHT_RELA, true, size, big_endian>
+       Reloc_section;
++  typedef Output_data_reloc<elfcpp::SHT_RELR, true, size, big_endian>
++      Relr_section;
+   typedef Relocate_info<size, big_endian> The_relocate_info;
+   typedef typename elfcpp::Elf_types<size>::Elf_Addr Address;
+   typedef AArch64_relobj<size, big_endian> The_aarch64_relobj;
+@@ -2920,8 +2922,8 @@ class Target_aarch64 : public Sized_target<size, big_endian>
+     : Sized_target<size, big_endian>(info),
+       got_(NULL), plt_(NULL), got_plt_(NULL), got_irelative_(NULL),
+       got_tlsdesc_(NULL), global_offset_table_(NULL), rela_dyn_(NULL),
+-      rela_irelative_(NULL), copy_relocs_(elfcpp::R_AARCH64_COPY),
+-      got_mod_index_offset_(-1U),
++      rela_irelative_(NULL), relr_dyn_(NULL),
++      copy_relocs_(elfcpp::R_AARCH64_COPY), got_mod_index_offset_(-1U),
+       tlsdesc_reloc_info_(), tls_base_symbol_defined_(false),
+       stub_tables_(), stub_group_size_(0), aarch64_input_section_map_()
+   { }
+@@ -3182,11 +3184,17 @@ class Target_aarch64 : public Sized_target<size, big_endian>
+     return this->do_make_data_plt(layout, got, got_plt, got_irelative);
+   }
+ 
+-  // We only need to generate stubs, and hence perform relaxation if we are
+-  // not doing relocatable linking.
+   virtual bool
+   do_may_relax() const
+-  { return !parameters->options().relocatable(); }
++  {
++    // If generating '.relr.dyn' section, we need a relaxation pass
++    // to do the shrinking after all the offsets have been populated.
++    if (parameters->options().experimental_use_relr())
++        return true;
++    // We need to generate stubs, and hence perform relaxation if we are
++    // not doing relocatable linking.
++    return !parameters->options().relocatable();
++  }
+ 
+   // Relaxation hook.  This is where we do stub generation.
+   virtual bool
+@@ -3457,6 +3465,10 @@ class Target_aarch64 : public Sized_target<size, big_endian>
+   Reloc_section*
+   rela_irelative_section(Layout*);
+ 
++  // Get the RELR dynamic reloc section, creating it if necessary.
++  Relr_section*
++  relr_dyn_section(Layout*);
++
+   // Add a potential copy relocation.
+   void
+   copy_reloc(Symbol_table* symtab, Layout* layout,
+@@ -3521,6 +3533,8 @@ class Target_aarch64 : public Sized_target<size, big_endian>
+   Reloc_section* rela_dyn_;
+   // The section to use for IRELATIVE relocs.
+   Reloc_section* rela_irelative_;
++  // The RELR dynamic reloc section.
++  Relr_section* relr_dyn_;
+   // Relocs saved to avoid a COPY reloc.
+   Copy_relocs<elfcpp::SHT_RELA, size, big_endian> copy_relocs_;
+   // Offset of the GOT entry for the TLS module index.
+@@ -3792,6 +3806,23 @@ Target_aarch64<size, big_endian>::rela_irelative_section(Layout* layout)
+   return this->rela_irelative_;
+ }
+ 
++// Get the RELR dynamic reloc section, creating it if necessary.
++
++template<int size, bool big_endian>
++typename Target_aarch64<size, big_endian>::Relr_section*
++Target_aarch64<size, big_endian>::relr_dyn_section(Layout* layout)
++{
++  if (this->relr_dyn_ == NULL)
++    {
++      gold_assert(layout != NULL);
++      this->relr_dyn_ = new Relr_section();
++      layout->add_output_section_data(".relr.dyn", elfcpp::SHT_RELR,
++				      elfcpp::SHF_ALLOC, this->relr_dyn_,
++				      ORDER_DYNAMIC_RELOCS, false);
++    }
++  return this->relr_dyn_;
++}
++
+ 
+ // do_make_elf_object to override the same function in the base class.  We need
+ // to use a target-specific sub-class of Sized_relobj_file<size, big_endian> to
+@@ -5642,8 +5673,34 @@ Target_aarch64<size, big_endian>::do_relax(
+     Layout* layout ,
+     const Task* task)
+ {
+-  gold_assert(!parameters->options().relocatable());
+   if (pass == 1)
++    {
++      Layout::Section_list::const_iterator p = layout->section_list().begin();
++      for ( ; p != layout->section_list().end(); ++p)
++        {
++          if (is_prefix_of(".relr.dyn", (*p)->name()))
++            break;
++        }
++
++      if (p != layout->section_list().end())
++        {
++          Output_section * const os = *p;
++          for (Output_section::Input_section_list::iterator ip = os->input_sections().begin();
++               ip != os->input_sections().end();
++               ++ip)
++            {
++              Relr_section *od = static_cast<Relr_section *>(ip->output_section_data());
++              od->shrink_relocs();
++            }
++        }
++
++      return true;
++    }
++
++  if (parameters->options().relocatable())
++    return false;
++
++  if (pass == 2)
+     {
+       // We don't handle negative stub_group_size right now.
+       this->stub_group_size_ = abs(parameters->options().stub_group_size());
+@@ -5659,7 +5716,7 @@ Target_aarch64<size, big_endian>::do_relax(
+     }
+   else
+     {
+-      // If this is not the first pass, addresses and file offsets have
++      // If this is not the second pass, addresses and file offsets have
+       // been reset at this point, set them here.
+       for (Stub_table_iterator sp = this->stub_tables_.begin();
+ 	   sp != this->stub_tables_.end(); ++sp)
+@@ -6129,14 +6186,22 @@ Target_aarch64<size, big_endian>::Scan::local(
+       // reloction, so that the dynamic loader can relocate it.
+       if (parameters->options().output_is_position_independent())
+ 	{
+-	  Reloc_section* rela_dyn = target->rela_dyn_section(layout);
+-	  rela_dyn->add_local_relative(object, r_sym,
+-				       elfcpp::R_AARCH64_RELATIVE,
+-				       output_section,
+-				       data_shndx,
+-				       rela.get_r_offset(),
+-				       rela.get_r_addend(),
+-				       is_ifunc);
++	  if (parameters->options().experimental_use_relr())
++	    {
++	      Relr_section* relr_dyn = target->relr_dyn_section(layout);
++	      relr_dyn->add_local_relative(object, r_sym, output_section,
++					   data_shndx, rela.get_r_offset());
++	    }
++	  else
++	    {
++	      Reloc_section* rela_dyn = target->rela_dyn_section(layout);
++	      rela_dyn->add_local_relative(object, r_sym,
++					   elfcpp::R_AARCH64_RELATIVE,
++					   output_section, data_shndx,
++					   rela.get_r_offset(),
++					   rela.get_r_addend(),
++					   is_ifunc);
++	    }
+ 	}
+       break;
+ 
+@@ -6159,15 +6224,22 @@ Target_aarch64<size, big_endian>::Scan::local(
+ 	else
+ 	  is_new = got->add_local(object, r_sym, GOT_TYPE_STANDARD);
+ 	if (is_new && parameters->options().output_is_position_independent())
+-	  target->rela_dyn_section(layout)->
+-	    add_local_relative(object,
+-			       r_sym,
+-			       elfcpp::R_AARCH64_RELATIVE,
+-			       got,
+-			       object->local_got_offset(r_sym,
+-							GOT_TYPE_STANDARD),
+-			       0,
+-			       false);
++	  {
++	    unsigned int got_offset =
++	      object->local_got_offset(r_sym, GOT_TYPE_STANDARD);
++	    if (parameters->options().experimental_use_relr())
++	      {
++		Relr_section* relr_dyn = target->relr_dyn_section(layout);
++		relr_dyn->add_local_relative(object, r_sym, got, got_offset);
++	      }
++	    else
++	      {
++		Reloc_section* rela_dyn = target->rela_dyn_section(layout);
++		rela_dyn->add_local_relative(object, r_sym,
++					     elfcpp::R_AARCH64_RELATIVE,
++					     got, got_offset, 0, false);
++	      }
++	  }
+       }
+       break;
+ 
+@@ -6448,15 +6520,25 @@ Target_aarch64<size, big_endian>::Scan::global(
+ 	    else if (r_type == elfcpp::R_AARCH64_ABS64
+ 		     && gsym->can_use_relative_reloc(false))
+ 	      {
+-		Reloc_section* rela_dyn = target->rela_dyn_section(layout);
+-		rela_dyn->add_global_relative(gsym,
+-					      elfcpp::R_AARCH64_RELATIVE,
+-					      output_section,
+-					      object,
+-					      data_shndx,
+-					      rela.get_r_offset(),
+-					      rela.get_r_addend(),
+-					      false);
++		if (parameters->options().experimental_use_relr())
++		  {
++		    Relr_section* relr_dyn =
++		      target->relr_dyn_section(layout);
++		    relr_dyn->add_global_relative(gsym, output_section,
++						  object, data_shndx,
++						  rela.get_r_offset());
++		  }
++		else
++		  {
++		    Reloc_section* rela_dyn = target->rela_dyn_section(layout);
++		    rela_dyn->add_global_relative(gsym,
++						  elfcpp::R_AARCH64_RELATIVE,
++						  output_section, object,
++						  data_shndx,
++						  rela.get_r_offset(),
++						  rela.get_r_addend(),
++						  false);
++		  }
+ 	      }
+ 	    else
+ 	      {
+@@ -6595,12 +6677,19 @@ Target_aarch64<size, big_endian>::Scan::global(
+ 		  }
+ 		if (is_new)
+ 		  {
+-		    rela_dyn->add_global_relative(
+-			gsym, elfcpp::R_AARCH64_RELATIVE,
+-			got,
+-			gsym->got_offset(GOT_TYPE_STANDARD),
+-			0,
+-			false);
++		    unsigned int got_off = gsym->got_offset(GOT_TYPE_STANDARD);
++		    if (parameters->options().experimental_use_relr())
++		      {
++			Relr_section* relr_dyn =
++			  target->relr_dyn_section(layout);
++			relr_dyn->add_global_relative(gsym, got, got_off);
++		      }
++		    else
++		      {
++			rela_dyn->add_global_relative(gsym,
++						      elfcpp::R_AARCH64_RELATIVE,
++						      got, got_off, 0, false);
++		      }
+ 		  }
+ 	      }
+ 	  }
+@@ -6950,7 +7039,8 @@ Target_aarch64<size, big_endian>::do_finalize_sections(
+ 				  ? NULL
+ 				  : this->plt_->rela_plt());
+   layout->add_target_dynamic_tags(false, this->got_plt_, rel_plt,
+-				  this->rela_dyn_, true, false);
++				  this->rela_dyn_, true, false,
++				  this->relr_dyn_);
+ 
+   // Emit any relocs we saved in an attempt to avoid generating COPY
+   // relocs.
+diff --git a/gold/arm.cc b/gold/arm.cc
+index a5a01bcd60e..7e11a02d97b 100644
+--- a/gold/arm.cc
++++ b/gold/arm.cc
+@@ -2116,6 +2116,8 @@ class Target_arm : public Sized_target<32, big_endian>
+  public:
+   typedef Output_data_reloc<elfcpp::SHT_REL, true, 32, big_endian>
+     Reloc_section;
++  typedef Output_data_reloc<elfcpp::SHT_RELR, true, 32, big_endian>
++    Relr_section;
+ 
+   // When were are relocating a stub, we pass this as the relocation number.
+   static const size_t fake_relnum_for_stubs = static_cast<size_t>(-1);
+@@ -2123,7 +2125,8 @@ class Target_arm : public Sized_target<32, big_endian>
+   Target_arm(const Target::Target_info* info = &arm_info)
+     : Sized_target<32, big_endian>(info),
+       got_(NULL), plt_(NULL), got_plt_(NULL), got_irelative_(NULL),
+-      rel_dyn_(NULL), rel_irelative_(NULL), copy_relocs_(elfcpp::R_ARM_COPY),
++      rel_dyn_(NULL), rel_irelative_(NULL), relr_dyn_(NULL),
++      copy_relocs_(elfcpp::R_ARM_COPY),
+       got_mod_index_offset_(-1U), tls_base_symbol_defined_(false),
+       stub_tables_(), stub_factory_(Stub_factory::get_instance()),
+       should_force_pic_veneer_(false),
+@@ -2519,11 +2522,17 @@ class Target_arm : public Sized_target<32, big_endian>
+   void
+   do_adjust_elf_header(unsigned char* view, int len);
+ 
+-  // We only need to generate stubs, and hence perform relaxation if we are
+-  // not doing relocatable linking.
+   bool
+   do_may_relax() const
+-  { return !parameters->options().relocatable(); }
++  {
++    // If generating '.relr.dyn' section, we need a relaxation pass
++    // to do the shrinking after all the offsets have been populated.
++    if (parameters->options().experimental_use_relr())
++        return true;
++    // We need to generate stubs, and hence perform relaxation if we are
++    // not doing relocatable linking.
++    return !parameters->options().relocatable();
++  }
+ 
+   bool
+   do_relax(int, const Input_objects*, Symbol_table*, Layout*, const Task*);
+@@ -2845,6 +2854,10 @@ class Target_arm : public Sized_target<32, big_endian>
+   Reloc_section*
+   rel_tls_desc_section(Layout*) const;
+ 
++  // Get the RELR dynamic reloc section, creating it if necessary.
++  Relr_section*
++  relr_dyn_section(Layout*);
++
+   // Return true if the symbol may need a COPY relocation.
+   // References from an executable object to non-function symbols
+   // defined in a dynamic object may need a COPY relocation.
+@@ -3009,6 +3022,8 @@ class Target_arm : public Sized_target<32, big_endian>
+   Reloc_section* rel_dyn_;
+   // The section to use for IRELATIVE relocs.
+   Reloc_section* rel_irelative_;
++  // The RELR dynamic reloc section.
++  Relr_section* relr_dyn_;
+   // Relocs saved to avoid a COPY reloc.
+   Copy_relocs<elfcpp::SHT_REL, 32, big_endian> copy_relocs_;
+   // Offset of the GOT entry for the TLS module index.
+@@ -4413,6 +4428,23 @@ Target_arm<big_endian>::rel_irelative_section(Layout* layout)
+   return this->rel_irelative_;
+ }
+ 
++// Get the RELR dynamic reloc section, creating it if necessary.
++
++template<bool big_endian>
++typename Target_arm<big_endian>::Relr_section*
++Target_arm<big_endian>::relr_dyn_section(Layout* layout)
++{
++  if (this->relr_dyn_ == NULL)
++    {
++      gold_assert(layout != NULL);
++      this->relr_dyn_ = new Relr_section();
++      layout->add_output_section_data(".relr.dyn", elfcpp::SHT_RELR,
++				      elfcpp::SHF_ALLOC, this->relr_dyn_,
++				      ORDER_DYNAMIC_RELOCS, false);
++    }
++  return this->relr_dyn_;
++}
++
+ 
+ // Insn_template methods.
+ 
+@@ -8600,13 +8632,22 @@ Target_arm<big_endian>::Scan::local(Symbol_table* symtab,
+       // relocate it easily.
+       if (parameters->options().output_is_position_independent())
+ 	{
+-	  Reloc_section* rel_dyn = target->rel_dyn_section(layout);
+ 	  unsigned int r_sym = elfcpp::elf_r_sym<32>(reloc.get_r_info());
+-	  // If we are to add more other reloc types than R_ARM_ABS32,
+-	  // we need to add check_non_pic(object, r_type) here.
+-	  rel_dyn->add_local_relative(object, r_sym, elfcpp::R_ARM_RELATIVE,
+-				      output_section, data_shndx,
+-				      reloc.get_r_offset(), is_ifunc);
++	  if (parameters->options().experimental_use_relr())
++	    {
++	      Relr_section* relr_dyn = target->relr_dyn_section(layout);
++	      relr_dyn->add_local_relative(object, r_sym, output_section,
++					    data_shndx, reloc.get_r_offset());
++	    }
++	  else
++	    {
++	      Reloc_section* rel_dyn = target->rel_dyn_section(layout);
++	      // If we are to add more other reloc types than R_ARM_ABS32,
++	      // we need to add check_non_pic(object, r_type) here.
++	      rel_dyn->add_local_relative(object, r_sym, elfcpp::R_ARM_RELATIVE,
++					  output_section, data_shndx,
++					  reloc.get_r_offset(), is_ifunc);
++	    }
+ 	}
+       break;
+ 
+@@ -8729,11 +8770,23 @@ Target_arm<big_endian>::Scan::local(Symbol_table* symtab,
+ 	    // dynamic RELATIVE relocation for this symbol's GOT entry.
+ 	    if (parameters->options().output_is_position_independent())
+ 	      {
+-		Reloc_section* rel_dyn = target->rel_dyn_section(layout);
++		unsigned int got_offset =
++		  object->local_got_offset(r_sym, GOT_TYPE_STANDARD);
+ 		unsigned int r_sym = elfcpp::elf_r_sym<32>(reloc.get_r_info());
+-		rel_dyn->add_local_relative(
+-		    object, r_sym, elfcpp::R_ARM_RELATIVE, got,
+-		    object->local_got_offset(r_sym, GOT_TYPE_STANDARD));
++		if (parameters->options().experimental_use_relr())
++		  {
++		    Relr_section* relr_dyn =
++		      target->relr_dyn_section(layout);
++		    relr_dyn->add_local_relative(object, r_sym,
++						 got, got_offset);
++		  }
++		else
++		  {
++		    Reloc_section* rel_dyn = target->rel_dyn_section(layout);
++		    rel_dyn->add_local_relative(object, r_sym,
++						elfcpp::R_ARM_RELATIVE,
++						got, got_offset);
++		  }
+ 	      }
+ 	  }
+       }
+@@ -9042,10 +9095,22 @@ Target_arm<big_endian>::Scan::global(Symbol_table* symtab,
+ 		      || r_type == elfcpp::R_ARM_ABS32_NOI)
+ 		     && gsym->can_use_relative_reloc(false))
+ 	      {
+-		Reloc_section* rel_dyn = target->rel_dyn_section(layout);
+-		rel_dyn->add_global_relative(gsym, elfcpp::R_ARM_RELATIVE,
+-					     output_section, object,
+-					     data_shndx, reloc.get_r_offset());
++		if (parameters->options().experimental_use_relr())
++		  {
++		    Relr_section* relr_dyn =
++		      target->relr_dyn_section(layout);
++		    relr_dyn->add_global_relative(gsym, output_section,
++						  object, data_shndx,
++						  reloc.get_r_offset());
++		  }
++		else
++		  {
++		    Reloc_section* rel_dyn = target->rel_dyn_section(layout);
++		    rel_dyn->add_global_relative(gsym, elfcpp::R_ARM_RELATIVE,
++						 output_section, object,
++						 data_shndx,
++						 reloc.get_r_offset());
++		  }
+ 	      }
+ 	    else
+ 	      {
+@@ -9212,9 +9277,21 @@ Target_arm<big_endian>::Scan::global(Symbol_table* symtab,
+ 		      gsym->set_needs_dynsym_value();
+ 		  }
+ 		if (is_new)
+-		  rel_dyn->add_global_relative(
+-		      gsym, elfcpp::R_ARM_RELATIVE, got,
+-		      gsym->got_offset(GOT_TYPE_STANDARD));
++		  {
++		    unsigned int got_off = gsym->got_offset(GOT_TYPE_STANDARD);
++		    if (parameters->options().experimental_use_relr())
++		      {
++			Relr_section* relr_dyn =
++			  target->relr_dyn_section(layout);
++			relr_dyn->add_global_relative(gsym, got, got_off);
++		      }
++		    else
++		      {
++			rel_dyn->add_global_relative(gsym,
++						     elfcpp::R_ARM_RELATIVE,
++						     got, got_off);
++		      }
++		  }
+ 	      }
+ 	  }
+       }
+@@ -9484,7 +9561,8 @@ Target_arm<big_endian>::do_finalize_sections(
+ 				  ? NULL
+ 				  : this->plt_->rel_plt());
+   layout->add_target_dynamic_tags(true, this->got_plt_, rel_plt,
+-				  this->rel_dyn_, true, false);
++				  this->rel_dyn_, true, false,
++				  this->relr_dyn_);
+ 
+   // Emit any relocs we saved in an attempt to avoid generating COPY
+   // relocs.
+@@ -12357,14 +12435,38 @@ Target_arm<big_endian>::do_relax(
+     Layout* layout,
+     const Task* task)
+ {
+-  // No need to generate stubs if this is a relocatable link.
+-  gold_assert(!parameters->options().relocatable());
++  if (pass == 1)
++    {
++      Layout::Section_list::const_iterator p = layout->section_list().begin();
++      for ( ; p != layout->section_list().end(); ++p)
++        {
++          if (is_prefix_of(".relr.dyn", (*p)->name()))
++            break;
++        }
++
++      if (p != layout->section_list().end())
++        {
++          Output_section * const os = *p;
++          for (Output_section::Input_section_list::iterator ip = os->input_sections().begin();
++               ip != os->input_sections().end();
++               ++ip)
++            {
++              Relr_section *od = static_cast<Relr_section *>(ip->output_section_data());
++              od->shrink_relocs();
++            }
++        }
+ 
+-  // If this is the first pass, we need to group input sections into
++      return true;
++    }
++
++  if (parameters->options().relocatable())
++    return false;
++
++  // If this is the second pass, we need to group input sections into
+   // stub groups.
+   bool done_exidx_fixup = false;
+   typedef typename Stub_table_list::iterator Stub_table_iterator;
+-  if (pass == 1)
++  if (pass == 2)
+     {
+       // Determine the stub group size.  The group size is the absolute
+       // value of the parameter --stub-group-size.  If --stub-group-size
+@@ -12434,7 +12536,7 @@ Target_arm<big_endian>::do_relax(
+     }
+   else
+     {
+-      // If this is not the first pass, addresses and file offsets have
++      // If this is not the second pass, addresses and file offsets have
+       // been reset at this point, set them here.
+       for (Stub_table_iterator sp = this->stub_tables_.begin();
+ 	   sp != this->stub_tables_.end();
+diff --git a/gold/layout.cc b/gold/layout.cc
+index a27cb071c75..73d1a47e4db 100644
+--- a/gold/layout.cc
++++ b/gold/layout.cc
+@@ -5068,7 +5068,8 @@ void
+ Layout::add_target_dynamic_tags(bool use_rel, const Output_data* plt_got,
+ 				const Output_data* plt_rel,
+ 				const Output_data_reloc_generic* dyn_rel,
+-				bool add_debug, bool dynrel_includes_plt)
++				bool add_debug, bool dynrel_includes_plt,
++				const Output_data_reloc_generic* dyn_relr)
+ {
+   Output_data_dynamic* odyn = this->dynamic_data_;
+   if (odyn == NULL)
+@@ -5141,6 +5142,17 @@ Layout::add_target_dynamic_tags(bool use_rel, const Output_data* plt_got,
+ 	}
+     }
+ 
++  if (dyn_relr != NULL && dyn_relr->output_section() != NULL)
++    {
++      const int size = parameters->target().get_size();
++      odyn->add_section_address(elfcpp::DT_RELR, dyn_relr->output_section());
++      odyn->add_section_size(elfcpp::DT_RELRSZ, dyn_relr->output_section());
++      odyn->add_constant(elfcpp::DT_RELRENT, size / 8);
++      if (parameters->options().combreloc())
++        odyn->add_constant(elfcpp::DT_RELRCOUNT,
++			   dyn_relr->relative_reloc_count());
++    }
++
+   if (add_debug && !parameters->options().shared())
+     {
+       // The value of the DT_DEBUG tag is filled in by the dynamic
+diff --git a/gold/layout.h b/gold/layout.h
+index 0b378003679..04ceed35fbc 100644
+--- a/gold/layout.h
++++ b/gold/layout.h
+@@ -945,7 +945,8 @@ class Layout
+   add_target_dynamic_tags(bool use_rel, const Output_data* plt_got,
+ 			  const Output_data* plt_rel,
+ 			  const Output_data_reloc_generic* dyn_rel,
+-			  bool add_debug, bool dynrel_includes_plt);
++			  bool add_debug, bool dynrel_includes_plt,
++			  const Output_data_reloc_generic* dyn_relr = NULL);
+ 
+   // Add a target-specific dynamic tag with constant value.
+   void
+diff --git a/gold/options.h b/gold/options.h
+index 927e0734bba..0c95a07404d 100644
+--- a/gold/options.h
++++ b/gold/options.h
+@@ -846,6 +846,10 @@ class General_options
+ 		 N_("Exclude libraries from automatic export"),
+ 		 N_(("lib,lib ...")));
+ 
++  DEFINE_bool(experimental_use_relr, options::TWO_DASHES, '\0', false,
++	      N_("Generate RELR dynamic relocations"),
++	      N_("Do not generate RELR dynamic relocations"));
++
+   DEFINE_bool(export_dynamic, options::TWO_DASHES, 'E', false,
+ 	      N_("Export all dynamic symbols"),
+ 	      N_("Do not export all dynamic symbols"));
+diff --git a/gold/output.cc b/gold/output.cc
+index b7505ffd72c..81d1e8dbd00 100644
+--- a/gold/output.cc
++++ b/gold/output.cc
+@@ -1236,6 +1236,26 @@ Output_reloc<elfcpp::SHT_RELA, dynamic, size, big_endian>::write(
+   orel.put_r_addend(addend);
+ }
+ 
++// Write out a Relr relocation.
++
++template<bool dynamic, int size, bool big_endian>
++void
++Output_reloc<elfcpp::SHT_RELR, dynamic, size, big_endian>::write(
++    unsigned char* pov) const
++{
++  elfcpp::Relr_write<size, big_endian> orel(pov);
++  if (this->bits_ == 0)
++    {
++      // This is not a continuation entry. Output full address.
++      orel.put_r_data(this->rel_.get_address());
++    }
++  else
++    {
++      // This is a continuation entry. Output the bitmap.
++      orel.put_r_data((this->bits_<<1)|1);
++    }
++}
++
+ // Output_data_reloc_base methods.
+ 
+ // Adjust the output section.
+@@ -1249,6 +1269,8 @@ Output_data_reloc_base<sh_type, dynamic, size, big_endian>
+     os->set_entsize(elfcpp::Elf_sizes<size>::rel_size);
+   else if (sh_type == elfcpp::SHT_RELA)
+     os->set_entsize(elfcpp::Elf_sizes<size>::rela_size);
++  else if (sh_type == elfcpp::SHT_RELR)
++    os->set_entsize(elfcpp::Elf_sizes<size>::relr_size);
+   else
+     gold_unreachable();
+ 
+@@ -1288,6 +1310,15 @@ Output_data_reloc_base<sh_type, dynamic, size, big_endian>::do_write(
+   this->do_write_generic<Writer>(of);
+ }
+ 
++template<bool dynamic, int size, bool big_endian>
++void
++Output_data_reloc<elfcpp::SHT_RELR, dynamic, size, big_endian>::do_write(
++    Output_file* of)
++{
++  typedef Output_reloc_writer<elfcpp::SHT_RELR, dynamic, size, big_endian> Writer;
++  this->template do_write_generic<Writer>(of);
++}
++
+ // Class Output_relocatable_relocs.
+ 
+ template<int sh_type, int size, bool big_endian>
+@@ -5545,6 +5576,26 @@ template
+ class Output_data_reloc<elfcpp::SHT_RELA, true, 64, true>;
+ #endif
+ 
++#ifdef HAVE_TARGET_32_LITTLE
++template
++class Output_data_reloc<elfcpp::SHT_RELR, true, 32, false>;
++#endif
++
++#ifdef HAVE_TARGET_32_BIG
++template
++class Output_data_reloc<elfcpp::SHT_RELR, true, 32, true>;
++#endif
++
++#ifdef HAVE_TARGET_64_LITTLE
++template
++class Output_data_reloc<elfcpp::SHT_RELR, true, 64, false>;
++#endif
++
++#ifdef HAVE_TARGET_64_BIG
++template
++class Output_data_reloc<elfcpp::SHT_RELR, true, 64, true>;
++#endif
++
+ #ifdef HAVE_TARGET_32_LITTLE
+ template
+ class Output_relocatable_relocs<elfcpp::SHT_REL, 32, false>;
+diff --git a/gold/output.h b/gold/output.h
+index 9c44f6259a2..84e473ee5a2 100644
+--- a/gold/output.h
++++ b/gold/output.h
+@@ -558,7 +558,6 @@ class Output_data
+   void
+   set_current_data_size_for_child(off_t data_size)
+   {
+-    gold_assert(!this->is_data_size_valid_);
+     this->data_size_ = data_size;
+   }
+ 
+@@ -1500,6 +1499,116 @@ class Output_reloc<elfcpp::SHT_RELA, dynamic, size, big_endian>
+   Addend addend_;
+ };
+ 
++// The SHT_RELR version of Output_reloc<>.  This is a relative reloc,
++// and holds nothing but an offset.  Rather than duplicate all the fields
++// of the SHT_REL version except for the symbol and relocation type, we
++// simply use an SHT_REL as a proxy.
++
++template<bool dynamic, int size, bool big_endian>
++class Output_reloc<elfcpp::SHT_RELR, dynamic, size, big_endian>
++{
++ public:
++  typedef typename elfcpp::Elf_types<size>::Elf_Addr Address;
++  typedef typename elfcpp::Elf_types<size>::Elf_WXword Relr_Data;
++
++  // An uninitialized entry.
++  Output_reloc()
++    : rel_()
++  { }
++
++  // A reloc against a global symbol.
++
++  Output_reloc(Symbol* gsym, Output_data* od, Address address)
++    : rel_(gsym, 0, od, address, true, true, false),
++      bits_(0)
++  { }
++
++  Output_reloc(Symbol* gsym, Sized_relobj<size, big_endian>* relobj,
++	       unsigned int shndx, Address address)
++    : rel_(gsym, 0, relobj, shndx, address, true, true, false),
++      bits_(0)
++  { }
++
++  // A reloc against a local symbol.
++
++  Output_reloc(Sized_relobj<size, big_endian>* relobj,
++	       unsigned int local_sym_index, Output_data* od, Address address,
++	       bool is_section_symbol)
++    : rel_(relobj, local_sym_index, 0, od, address, true,
++	   true, is_section_symbol, false),
++      bits_(0)
++  { }
++
++  Output_reloc(Sized_relobj<size, big_endian>* relobj,
++	       unsigned int local_sym_index, unsigned int shndx,
++	       Address address, bool is_section_symbol)
++    : rel_(relobj, local_sym_index, 0, shndx, address, true,
++	   true, is_section_symbol, false),
++      bits_(0)
++  { }
++
++  // A reloc against the STT_SECTION symbol of an output section.
++
++  Output_reloc(Output_section* os, Output_data* od, Address address)
++    : rel_(os, 0, od, address, true),
++      bits_(0)  { }
++
++  Output_reloc(Output_section* os, Sized_relobj<size, big_endian>* relobj,
++	       unsigned int shndx, Address address)
++    : rel_(os, 0, relobj, shndx, address, true),
++      bits_(0)  { }
++
++  // A relative relocation with no symbol.
++
++  Output_reloc(Output_data* od, Address address)
++    : rel_(0, od, address, true),
++      bits_(0)
++  { }
++
++  Output_reloc(Sized_relobj<size, big_endian>* relobj,
++	       unsigned int shndx, Address address)
++    : rel_(0, relobj, shndx, address, true),
++      bits_(0)
++  { }
++
++  // Return whether this is a RELATIVE relocation.
++  bool
++  is_relative() const
++  { return true; }
++
++  // Return whether this is a relocation which should not use
++  // a symbol, but which obtains its addend from a symbol.
++  bool
++  is_symbolless() const
++  { return true; }
++
++  // If this relocation is against an input section, return the
++  // relocatable object containing the input section.
++  Sized_relobj<size, big_endian>*
++  get_relobj() const
++  { return this->rel_.get_relobj(); }
++
++  // Write the reloc entry to an output view.
++  void
++  write(unsigned char* pov) const;
++
++  // Return whether this reloc should be sorted before the argument
++  // when sorting dynamic relocs.
++  bool
++  sort_before(const Output_reloc<elfcpp::SHT_RELR, dynamic, size, big_endian>&
++	      r2) const
++  { return this->rel_.compare(r2.rel_) < 0; }
++
++ public:
++  // The basic reloc.
++  Output_reloc<elfcpp::SHT_REL, dynamic, size, big_endian> rel_;
++
++  // Relocation bitmap for encoding offsets continuing from previous entry.
++  //   https://groups.google.com/d/msg/generic-abi/bX460iggiKg/Pi9aSwwABgAJ
++  // 31-bits/63-bits.
++  Relr_Data bits_;
++};
++
+ // Output_data_reloc_generic is a non-template base class for
+ // Output_data_reloc_base.  This gives the generic code a way to hold
+ // a pointer to a reloc section.
+@@ -1675,7 +1784,7 @@ class Output_data_reloc_base : public Output_data_reloc_generic
+       relobj->add_dyn_reloc(this->relocs_.size() - 1);
+   }
+ 
+- private:
++ protected:
+   typedef std::vector<Output_reloc_type> Relocs;
+ 
+   // The class used to sort the relocations.
+@@ -2344,6 +2453,231 @@ class Output_data_reloc<elfcpp::SHT_RELA, dynamic, size, big_endian>
+   }
+ };
+ 
++// The SHT_RELR version of Output_data_reloc.
++
++template<bool dynamic, int size, bool big_endian>
++class Output_data_reloc<elfcpp::SHT_RELR, dynamic, size, big_endian>
++  : public Output_data_reloc_base<elfcpp::SHT_RELR, dynamic, size, big_endian>
++{
++ private:
++  typedef Output_data_reloc_base<elfcpp::SHT_RELR, dynamic, size,
++				 big_endian> Base;
++  typedef typename elfcpp::Elf_types<size>::Elf_WXword Relr_Data;
++
++ public:
++  typedef typename Base::Output_reloc_type Output_reloc_type;
++  typedef typename Output_reloc_type::Address Address;
++  typedef typename Base::Sort_relocs_comparison Sort_relocs_comparison;
++  typedef typename Base::Relocs Relocs;
++
++  Output_data_reloc()
++    : Output_data_reloc_base<elfcpp::SHT_RELR, dynamic, size, big_endian>(false)
++  { }
++
++  void do_write(Output_file *);
++
++  template<class Output_reloc_writer>
++  void
++  do_write_generic(Output_file *of)
++  {
++    const off_t off = this->offset();
++    const off_t oview_size = this->data_size();
++    unsigned char* const oview = of->get_output_view(off, oview_size);
++
++    unsigned char* pov = oview;
++    for (typename Relocs::const_iterator p = this->relocs_.begin();
++	 p != this->relocs_.end();
++	 ++p)
++      {
++	Output_reloc_writer::write(p, pov);
++	pov += Base::reloc_size;
++      }
++
++    gold_assert(pov - oview == oview_size);
++
++    of->write_output_view(off, oview_size, oview);
++
++    // We no longer need the relocation entries.
++    this->relocs_.clear();
++  }
++
++  void shrink_relocs()
++  {
++    Relocs shrink_relocs;
++    gold_assert(dynamic);
++    shrink_relocs.clear();
++
++    // Always sort the relocs_ vector for RELR relocs.
++    std::sort(this->relocs_.begin(), this->relocs_.end(),
++              Sort_relocs_comparison());
++
++    // Word size in number of bytes, used for computing the offsets bitmap.
++    unsigned int word_size = size / 8;
++
++    // Number of bits to use for the relocation offsets bitmap.
++    // These many relative relocations can be encoded in a single entry.
++    unsigned int n_bits = size - 1;
++
++    Address base = 0;
++    typename Relocs::iterator curr = this->relocs_.begin();
++    while (curr != this->relocs_.end())
++      {
++        Address current = curr->rel_.get_address();
++        // Odd addresses are not supported in SHT_RELR.
++        gold_assert(current%2 == 0);
++
++        Relr_Data bits = 0;
++        typename Relocs::iterator next = curr;
++        if ((base > 0) && (base <= current))
++          {
++            while (next != this->relocs_.end())
++              {
++                Address delta = next->rel_.get_address() - base;
++                // If next is too far out, it cannot be folded into curr.
++                if (delta >= (n_bits * word_size))
++                  break;
++                // If next is not a multiple of word_size away, it cannot
++                // be folded into curr.
++                if ((delta % word_size) != 0)
++                  break;
++                // next can be folded into curr, add it to the bitmap.
++                bits |= 1ULL << (delta / word_size);
++                ++next;
++              }
++          }
++
++        curr->bits_ = bits;
++        shrink_relocs.push_back(*curr);
++        if (bits == 0)
++          {
++            // This is not a continuation entry, only one offset was
++            // consumed. Set base offset for subsequent bitmap entries.
++            base = current + word_size;
++            ++curr;
++          }
++        else
++          {
++            // This is a continuation entry encoding multiple offsets
++            // in a bitmap. Advance base offset by n_bits words.
++            base += n_bits * word_size;
++            curr = next;
++          }
++      }
++
++    // Copy shrink_relocs vector to relocs_
++    this->relocs_.clear();
++    for (typename Relocs::const_iterator p = shrink_relocs.begin();
++         p != shrink_relocs.end();
++         ++p)
++      {
++        this->relocs_.push_back(*p);
++      }
++    this->set_current_data_size(this->relocs_.size() * Base::reloc_size);
++  }
++
++  void
++  add_global_generic(Symbol*, unsigned int, Output_data*, uint64_t, uint64_t)
++  {
++    gold_unreachable();
++  }
++
++  void
++  add_global_generic(Symbol*, unsigned int, Output_data*, Relobj*,
++		     unsigned int, uint64_t, uint64_t)
++  {
++    gold_unreachable();
++  }
++
++  // Add a RELATIVE reloc against a global symbol.  The final relocation
++  // will not reference the symbol.
++
++  void
++  add_global_relative(Symbol* gsym, Output_data* od, Address address)
++  {
++    this->add(od, Output_reloc_type(gsym, od, address));
++  }
++
++  void
++  add_global_relative(Symbol* gsym, Output_data* od,
++		      Sized_relobj<size, big_endian>* relobj,
++		      unsigned int shndx, Address address)
++  {
++    this->add(od, Output_reloc_type(gsym, relobj, shndx, address));
++  }
++
++  void
++  add_local_generic(Relobj*, unsigned int, unsigned int, Output_data*, uint64_t,
++		    uint64_t)
++  {
++    gold_unreachable();
++  }
++
++  void
++  add_local_generic(Relobj*, unsigned int, unsigned int, Output_data*,
++		    unsigned int, uint64_t, uint64_t)
++  {
++    gold_unreachable();
++  }
++
++  // Add a RELATIVE reloc against a local symbol.
++
++  void
++  add_local_relative(Sized_relobj<size, big_endian>* relobj,
++		     unsigned int local_sym_index, Output_data* od,
++		     Address address)
++  {
++    this->add(od, Output_reloc_type(relobj, local_sym_index, od, address,
++				    false));
++  }
++
++  void
++  add_local_relative(Sized_relobj<size, big_endian>* relobj,
++		     unsigned int local_sym_index, Output_data* od,
++		     unsigned int shndx, Address address)
++  {
++    this->add(od, Output_reloc_type(relobj, local_sym_index, shndx, address,
++				    false));
++  }
++
++  void
++  add_output_section_generic(Output_section*, unsigned int, Output_data*,
++			     uint64_t, uint64_t)
++  {
++    gold_unreachable();
++  }
++
++  void
++  add_output_section_generic(Output_section*, unsigned int, Output_data*,
++			     Relobj*, unsigned int, uint64_t, uint64_t)
++  {
++    gold_unreachable();
++  }
++
++  // Add a RELATIVE reloc against an output section symbol.
++
++  void
++  add_output_section_relative(Output_section* os, Output_data* od,
++			      Address address)
++  { this->add(od, Output_reloc_type(os, od, address)); }
++
++  void
++  add_output_section_relative(Output_section* os, Output_data* od,
++			      Sized_relobj<size, big_endian>* relobj,
++			      unsigned int shndx, Address address)
++  { this->add(od, Output_reloc_type(os, relobj, shndx, address)); }
++
++  // Add a relative relocation
++
++  void
++  add_relative(Output_data* od, Address address)
++  { this->add(od, Output_reloc_type(od, address)); }
++
++  void
++  add_relative(Output_data* od, Sized_relobj<size, big_endian>* relobj,
++	       unsigned int shndx, Address address)
++  { this->add(od, Output_reloc_type(relobj, shndx, address)); }
++};
++
+ // Output_relocatable_relocs represents a relocation section in a
+ // relocatable link.  The actual data is written out in the target
+ // hook relocate_relocs.  This just saves space for it.
+diff --git a/gold/reloc-types.h b/gold/reloc-types.h
+index 106c54c1be6..da435b3d7e9 100644
+--- a/gold/reloc-types.h
++++ b/gold/reloc-types.h
+@@ -79,6 +79,26 @@ struct Reloc_types<elfcpp::SHT_RELA, size, big_endian>
+   { p->put_r_addend(val); }
+ };
+ 
++template<int size, bool big_endian>
++struct Reloc_types<elfcpp::SHT_RELR, size, big_endian>
++{
++  typedef typename elfcpp::Relr<size, big_endian> Reloc;
++  typedef typename elfcpp::Relr_write<size, big_endian> Reloc_write;
++  static const int reloc_size = elfcpp::Elf_sizes<size>::relr_size;
++
++  static inline typename elfcpp::Elf_types<size>::Elf_Swxword
++  get_reloc_addend(const Reloc*)
++  { gold_unreachable(); }
++
++  static inline typename elfcpp::Elf_types<size>::Elf_Swxword
++  get_reloc_addend_noerror(const Reloc*)
++  { return 0; }
++
++  static inline void
++  set_reloc_addend(Reloc_write*,
++		   typename elfcpp::Elf_types<size>::Elf_Swxword)
++  { gold_unreachable(); }
++};
+ }; // End namespace gold.
+ 
+ #endif // !defined(GOLD_RELOC_TYPE_SH)
+diff --git a/gold/x86_64.cc b/gold/x86_64.cc
+index 2e4b2a70134..5add876cd34 100644
+--- a/gold/x86_64.cc
++++ b/gold/x86_64.cc
+@@ -698,12 +698,13 @@ class Target_x86_64 : public Sized_target<size, false>
+   // In the x86_64 ABI (p 68), it says "The AMD64 ABI architectures
+   // uses only Elf64_Rela relocation entries with explicit addends."
+   typedef Output_data_reloc<elfcpp::SHT_RELA, true, size, false> Reloc_section;
++  typedef Output_data_reloc<elfcpp::SHT_RELR, true, size, false> Relr_section;
+ 
+   Target_x86_64(const Target::Target_info* info = &x86_64_info)
+     : Sized_target<size, false>(info),
+       got_(NULL), plt_(NULL), got_plt_(NULL), got_irelative_(NULL),
+       got_tlsdesc_(NULL), global_offset_table_(NULL), rela_dyn_(NULL),
+-      rela_irelative_(NULL), copy_relocs_(elfcpp::R_X86_64_COPY),
++      rela_irelative_(NULL), relr_dyn_(NULL), copy_relocs_(elfcpp::R_X86_64_COPY),
+       got_mod_index_offset_(-1U), tlsdesc_reloc_info_(),
+       tls_base_symbol_defined_(false), isa_1_used_(0), isa_1_needed_(0),
+       feature_1_(0), feature_2_used_(0), feature_2_needed_(0),
+@@ -983,6 +984,43 @@ class Target_x86_64 : public Sized_target<size, false>
+ 		   Output_data_space* got_irelative,
+ 		   unsigned int plt_count);
+ 
++  bool
++  do_may_relax() const
++  {
++    // If generating '.relr.dyn' section, we need a relaxation pass
++    // to do the shrinking after all the offsets have been populated.
++    return parameters->options().experimental_use_relr();
++  }
++
++  bool
++  do_relax (int pass, const Input_objects*, Symbol_table*, Layout* layout, const Task*)
++  {
++    if (pass > 1)
++      return false;
++
++    Layout::Section_list::const_iterator p = layout->section_list().begin();
++    for ( ; p != layout->section_list().end(); ++p)
++      {
++	if (is_prefix_of(".relr.dyn", (*p)->name()))
++	  break;
++      }
++
++    if (p == layout->section_list().end())
++      return false;
++
++    Output_section * const os = *p;
++    for (Output_section::Input_section_list::iterator ip = os->input_sections().begin();
++         ip != os->input_sections().end();
++         ++ip)
++      {
++        Relr_section *od = static_cast<Relr_section *>(ip->output_section_data());
++        od->shrink_relocs();
++      }
++
++    return true;
++  }
++
++
+  private:
+   // The class which scans relocations.
+   class Scan
+@@ -1290,6 +1328,10 @@ class Target_x86_64 : public Sized_target<size, false>
+   Reloc_section*
+   rela_irelative_section(Layout*);
+ 
++  // Get the RELR dynamic reloc section, creating it if necessary.
++  Relr_section*
++  relr_dyn_section(Layout*);
++
+   // Add a potential copy relocation.
+   void
+   copy_reloc(Symbol_table* symtab, Layout* layout,
+@@ -1368,6 +1410,8 @@ class Target_x86_64 : public Sized_target<size, false>
+   Reloc_section* rela_dyn_;
+   // The section to use for IRELATIVE relocs.
+   Reloc_section* rela_irelative_;
++  // The RELR dynamic reloc section.
++  Relr_section* relr_dyn_;
+   // Relocs saved to avoid a COPY reloc.
+   Copy_relocs<elfcpp::SHT_RELA, size, false> copy_relocs_;
+   // Offset of the GOT entry for the TLS module index.
+@@ -1708,6 +1752,23 @@ Target_x86_64<size>::do_finalize_gnu_properties(Layout* layout) const
+ 		 this->feature_2_needed_);
+ }
+ 
++// Get the RELR dynamic reloc section, creating it if necessary.
++
++template<int size>
++typename Target_x86_64<size>::Relr_section*
++Target_x86_64<size>::relr_dyn_section(Layout* layout)
++{
++  if (this->relr_dyn_ == NULL)
++    {
++      gold_assert(layout != NULL);
++      this->relr_dyn_ = new Relr_section();
++      layout->add_output_section_data(".relr.dyn", elfcpp::SHT_RELR,
++				      elfcpp::SHF_ALLOC, this->relr_dyn_,
++				      ORDER_DYNAMIC_RELOCS, false);
++    }
++  return this->relr_dyn_;
++}
++
+ // Write the first three reserved words of the .got.plt section.
+ // The remainder of the section is written while writing the PLT
+ // in Output_data_plt_i386::do_write.
+@@ -3626,14 +3687,25 @@ Target_x86_64<size>::Scan::local(Symbol_table* symtab,
+       if (parameters->options().output_is_position_independent())
+ 	{
+ 	  unsigned int r_sym = elfcpp::elf_r_sym<size>(reloc.get_r_info());
+-	  Reloc_section* rela_dyn = target->rela_dyn_section(layout);
+-	  rela_dyn->add_local_relative(object, r_sym,
+-				       (size == 32
+-					? elfcpp::R_X86_64_RELATIVE64
+-					: elfcpp::R_X86_64_RELATIVE),
+-				       output_section, data_shndx,
+-				       reloc.get_r_offset(),
+-				       reloc.get_r_addend(), is_ifunc);
++	  if (size == 64
++	      && !is_ifunc
++	      && parameters->options().experimental_use_relr())
++	    {
++	      Relr_section* relr_dyn = target->relr_dyn_section(layout);
++	      relr_dyn->add_local_relative(object, r_sym, output_section,
++					   data_shndx, reloc.get_r_offset());
++	    }
++	  else
++	    {
++	      Reloc_section* rela_dyn = target->rela_dyn_section(layout);
++	      rela_dyn->add_local_relative(object, r_sym,
++					   (size == 32
++					    ? elfcpp::R_X86_64_RELATIVE64
++					    : elfcpp::R_X86_64_RELATIVE),
++					   output_section, data_shndx,
++					   reloc.get_r_offset(),
++					   reloc.get_r_addend(), is_ifunc);
++	    }
+ 	}
+       break;
+ 
+@@ -3651,12 +3723,22 @@ Target_x86_64<size>::Scan::local(Symbol_table* symtab,
+ 	  if (size == 32 && r_type == elfcpp::R_X86_64_32)
+ 	    {
+ 	      unsigned int r_sym = elfcpp::elf_r_sym<size>(reloc.get_r_info());
+-	      Reloc_section* rela_dyn = target->rela_dyn_section(layout);
+-	      rela_dyn->add_local_relative(object, r_sym,
+-					   elfcpp::R_X86_64_RELATIVE,
+-					   output_section, data_shndx,
+-					   reloc.get_r_offset(),
+-					   reloc.get_r_addend(), is_ifunc);
++	      if (!is_ifunc && parameters->options().experimental_use_relr())
++		{
++		  Relr_section* relr_dyn = target->relr_dyn_section(layout);
++		  relr_dyn->add_local_relative(object, r_sym, output_section,
++					       data_shndx,
++					       reloc.get_r_offset());
++		}
++	      else
++		{
++		  Reloc_section* rela_dyn = target->rela_dyn_section(layout);
++		  rela_dyn->add_local_relative(object, r_sym,
++					       elfcpp::R_X86_64_RELATIVE,
++					       output_section, data_shndx,
++					       reloc.get_r_offset(),
++					       reloc.get_r_addend(), is_ifunc);
++		}
+ 	      break;
+ 	    }
+ 
+@@ -3758,24 +3840,33 @@ Target_x86_64<size>::Scan::local(Symbol_table* symtab,
+ 	    // dynamic relocation for this symbol's GOT entry.
+ 	    if (parameters->options().output_is_position_independent())
+ 	      {
++		unsigned int got_offset =
++		  object->local_got_offset(r_sym, GOT_TYPE_STANDARD);
+ 		Reloc_section* rela_dyn = target->rela_dyn_section(layout);
+ 		// R_X86_64_RELATIVE assumes a 64-bit relocation.
+-		if (r_type != elfcpp::R_X86_64_GOT32)
+-		  {
+-		    unsigned int got_offset =
+-		      object->local_got_offset(r_sym, GOT_TYPE_STANDARD);
+-		    rela_dyn->add_local_relative(object, r_sym,
+-						 elfcpp::R_X86_64_RELATIVE,
+-						 got, got_offset, 0, is_ifunc);
+-		  }
+-		else
++		if (r_type == elfcpp::R_X86_64_GOT32)
+ 		  {
+ 		    this->check_non_pic(object, r_type, NULL);
+ 
+ 		    gold_assert(lsym.get_st_type() != elfcpp::STT_SECTION);
+ 		    rela_dyn->add_local(
+ 			object, r_sym, r_type, got,
+-			object->local_got_offset(r_sym, GOT_TYPE_STANDARD), 0);
++			got_offset, 0);
++		  }
++		else if (size == 64
++			 && !is_ifunc
++			 && parameters->options().experimental_use_relr())
++		  {
++		    Relr_section* relr_dyn =
++		      target->relr_dyn_section(layout);
++		    relr_dyn->add_local_relative(object, r_sym,
++						 got, got_offset);
++		  }
++		else
++		  {
++		    rela_dyn->add_local_relative(object, r_sym,
++						 elfcpp::R_X86_64_RELATIVE,
++						 got, got_offset, 0, is_ifunc);
+ 		  }
+ 	      }
+ 	  }
+@@ -4125,12 +4216,24 @@ Target_x86_64<size>::Scan::global(Symbol_table* symtab,
+ 		      || (size == 32 && r_type == elfcpp::R_X86_64_32))
+ 		     && gsym->can_use_relative_reloc(false))
+ 	      {
+-		Reloc_section* rela_dyn = target->rela_dyn_section(layout);
+-		rela_dyn->add_global_relative(gsym, elfcpp::R_X86_64_RELATIVE,
+-					      output_section, object,
+-					      data_shndx,
+-					      reloc.get_r_offset(),
+-					      reloc.get_r_addend(), false);
++		if (parameters->options().experimental_use_relr())
++		  {
++		    Relr_section* relr_dyn =
++		      target->relr_dyn_section(layout);
++		    relr_dyn->add_global_relative(gsym, output_section,
++						  object, data_shndx,
++						  reloc.get_r_offset());
++		  }
++		else
++		  {
++		    Reloc_section* rela_dyn = target->rela_dyn_section(layout);
++		    rela_dyn->add_global_relative(gsym,
++						  elfcpp::R_X86_64_RELATIVE,
++						  output_section, object,
++						  data_shndx,
++						  reloc.get_r_offset(),
++						  reloc.get_r_addend(), false);
++		  }
+ 	      }
+ 	    else
+ 	      {
+@@ -4269,9 +4372,18 @@ Target_x86_64<size>::Scan::global(Symbol_table* symtab,
+ 		if (is_new)
+ 		  {
+ 		    unsigned int got_off = gsym->got_offset(GOT_TYPE_STANDARD);
+-		    rela_dyn->add_global_relative(gsym,
+-						  elfcpp::R_X86_64_RELATIVE,
+-						  got, got_off, 0, false);
++		    if (parameters->options().experimental_use_relr())
++		      {
++			Relr_section* relr_dyn =
++			  target->relr_dyn_section(layout);
++			relr_dyn->add_global_relative(gsym, got, got_off);
++		      }
++		    else
++		      {
++			rela_dyn->add_global_relative(gsym,
++						      elfcpp::R_X86_64_RELATIVE,
++						      got, got_off, 0, false);
++		      }
+ 		  }
+ 	      }
+ 	  }
+@@ -4540,7 +4652,8 @@ Target_x86_64<size>::do_finalize_sections(
+ 				  ? NULL
+ 				  : this->plt_->rela_plt());
+   layout->add_target_dynamic_tags(false, this->got_plt_, rel_plt,
+-				  this->rela_dyn_, true, false);
++				  this->rela_dyn_, true, false,
++				  this->relr_dyn_);
+ 
+   // Fill in some more dynamic tags.
+   Output_data_dynamic* const odyn = layout->dynamic_data();
+diff --git a/include/elf/common.h b/include/elf/common.h
+index e7d55ae0782..02e1bc7ca90 100644
+--- a/include/elf/common.h
++++ b/include/elf/common.h
+@@ -543,6 +543,10 @@
+ #define SHT_GNU_verneed	SHT_SUNW_verneed
+ #define SHT_GNU_versym	SHT_SUNW_versym
+ 
++/* Experimental support for SHT_RELR sections. For details, see proposal
++   at https://groups.google.com/forum/#!topic/generic-abi/bX460iggiKg */
++#define SHT_RELR	0x6fffff00	/* Relative relocations, only offsets */
++
+ #define SHT_LOPROC	0x70000000	/* Processor-specific semantics, lo */
+ #define SHT_HIPROC	0x7FFFFFFF	/* Processor-specific semantics, hi */
+ #define SHT_LOUSER	0x80000000	/* Application-specific semantics */
+@@ -1085,6 +1089,13 @@
+ /* This tag is a GNU extension to the Solaris version scheme.  */
+ #define DT_VERSYM	0x6ffffff0
+ 
++/* Experimental support for SHT_RELR sections. For details, see proposal
++   at https://groups.google.com/forum/#!topic/generic-abi/bX460iggiKg */
++#define DT_RELR		0x6fffe000
++#define DT_RELRSZ	0x6fffe001
++#define DT_RELRENT	0x6fffe003
++#define DT_RELRCOUNT	0x6fffe005
++
+ #define DT_LOPROC	0x70000000
+ #define DT_HIPROC	0x7fffffff
+ 
+diff --git a/include/elf/external.h b/include/elf/external.h
+index b24985687e6..9298021e5b9 100644
+--- a/include/elf/external.h
++++ b/include/elf/external.h
+@@ -211,6 +211,10 @@ typedef struct {
+   unsigned char	r_addend[4];	/* Constant addend used to compute value */
+ } Elf32_External_Rela;
+ 
++typedef struct {
++  unsigned char r_data[4];	/* jump and bitmap for relative relocations */
++} Elf32_External_Relr;
++
+ typedef struct {
+   unsigned char r_offset[8];	/* Location at which to apply the action */
+   unsigned char	r_info[8];	/* index and type of relocation */
+@@ -222,6 +226,10 @@ typedef struct {
+   unsigned char	r_addend[8];	/* Constant addend used to compute value */
+ } Elf64_External_Rela;
+ 
++typedef struct {
++  unsigned char r_data[8];	/* jump and bitmap for relative relocations */
++} Elf64_External_Relr;
++
+ /* dynamic section structure */
+ 
+ typedef struct {
+-- 
+2.32.0
+

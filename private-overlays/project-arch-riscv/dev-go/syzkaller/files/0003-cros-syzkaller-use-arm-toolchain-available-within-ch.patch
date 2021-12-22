@@ -43,7 +43,7 @@ index dd3977795..37ae9fc76 100644
 +       }
 +       if target.OS == "linux" && target.Arch == "riscv64" {
 +               target.CCompiler = "riscv64-cros-linux-gnu-clang++"
-+	       target.CFlags = append(target.CFlags, "-mno-relax")
++	       target.CFlags = append(target.CFlags, "-fuse-ld=bfd")
 +       }
  }
  

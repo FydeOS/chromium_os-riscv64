@@ -22,7 +22,7 @@ Index: rustc-1.54.0-src/compiler/rustc_target/src/spec/riscv64_cros_linux_gnu.rs
 +    let mut link_args = LinkArgs::new();
 +    link_args.insert(
 +        LinkerFlavor::Gcc, 
-+        vec!["-mno-relax".to_string()],
++        vec!["-fuse-ld=bfd".to_string()],
 +     );
      Target {
          llvm_target: "riscv64-cros-linux-gnu".to_string(),
@@ -44,7 +44,7 @@ Index: rustc-1.54.0-src/src/bootstrap/native.rs
          }
      }
 +    if target.contains("riscv") {
-+      cflags.push_str(" -mno-relax");
++      cflags.push_str(" -fuse-ld=bfd");
 +    }
      if builder.config.llvm_clang_cl.is_some() {
          cflags.push_str(&format!(" --target={}", target))
@@ -54,7 +54,7 @@ Index: rustc-1.54.0-src/src/bootstrap/native.rs
          cxxflags.push_str(&format!(" {}", s));
      }
 +    if target.contains("riscv") {
-+      cxxflags.push_str(" -mno-relax");
++      cxxflags.push_str(" -fuse-ld=bfd");
 +    }
      if builder.config.llvm_clang_cl.is_some() {
          cxxflags.push_str(&format!(" --target={}", target))
@@ -78,7 +78,7 @@ Index: rustc-1.54.0-src/src/llvm-project/compiler-rt/cmake/base-config-ix.cmake
        test_target_arch(riscv32 "" "")
      elseif("${COMPILER_RT_DEFAULT_TARGET_ARCH}" MATCHES "riscv64")
 -      test_target_arch(riscv64 "" "")
-+      test_target_arch(riscv64 "" "-mno-relax")
++      test_target_arch(riscv64 "" "-fuse-ld=bfd")
      elseif("${COMPILER_RT_DEFAULT_TARGET_ARCH}" MATCHES "wasm32")
        test_target_arch(wasm32 "" "--target=wasm32-unknown-unknown")
      elseif("${COMPILER_RT_DEFAULT_TARGET_ARCH}" MATCHES "wasm64")
@@ -91,7 +91,7 @@ Index: rustc-1.54.0-src/src/bootstrap/lib.rs
              base.push("-stdlib=libc++".into());
          }
 +        if target.contains("riscv") {
-+            base.push("-mno-relax".into());
++            base.push("-fuse-ld=bfd".into());
 +        }
  
          // Work around an apparently bad MinGW / GCC optimization,

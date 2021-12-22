@@ -1,0 +1,31 @@
+Upstream submission:
+http://marc.info/?l=netfilter-devel&m=148554956909991&w=2
+
+From 518baac1332d422628b94c2e1308993f27ffa390 Mon Sep 17 00:00:00 2001
+From: Kevin Cernekee <cernekee@chromium.org>
+Date: Fri, 27 Jan 2017 11:58:32 -0800
+Subject: [PATCH] conntrackd: cthelper: Free pktb after use
+
+According to valgrind, this currently leaks ~512B to 2kB for each
+packet sent to the userspace helper.
+
+Signed-off-by: Kevin Cernekee <cernekee@chromium.org>
+---
+ src/cthelper.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/src/cthelper.c b/src/cthelper.c
+index 54eb830..f01c509 100644
+--- a/src/cthelper.c
++++ b/src/cthelper.c
+@@ -325,6 +325,7 @@ static int nfq_queue_cb(const struct nlmsghdr *nlh, void *data)
+ 	if (pkt_verdict_issue(helper, myct, queue_num, id, verdict, pktb) < 0)
+ 		goto err4;
+ 
++	pktb_free(pktb);
+ 	nfct_destroy(ct);
+ 	if (myct->exp != NULL)
+ 		nfexp_destroy(myct->exp);
+-- 
+1.9.1
+

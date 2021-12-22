@@ -1,0 +1,13 @@
+Index: binutils-2.36.1/Makefile.in
+===================================================================
+--- binutils-2.36.1.orig/Makefile.in
++++ binutils-2.36.1/Makefile.in
+@@ -18592,7 +18592,7 @@ configure-ld:
+ 	  $$s/$$module_srcdir/configure \
+ 	  --srcdir=$${topdir}/$$module_srcdir \
+ 	  $(HOST_CONFIGARGS) --build=${build_alias} --host=${host_alias} \
+-	  --target=${target_alias}  \
++	  --target=${target_alias}  --with-lib-path=$(libdir):/usr/lib64 \
+ 	  || exit 1
+ @endif ld
+ 

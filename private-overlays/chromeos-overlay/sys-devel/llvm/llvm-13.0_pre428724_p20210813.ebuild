@@ -291,6 +291,7 @@ multilib_src_configure() {
 }
 
 multilib_src_compile() {
+  die "wait for compile"
 	cmake_src_compile
 
 	pax-mark m "${BUILD_DIR}"/bin/llvm-rtdyld
@@ -372,6 +373,11 @@ multilib_src_install() {
 			--use_ccache="${ccache_option}" \
 			--use_llvm_next="${use_llvm_next}" \
 			--output_file="${D}/usr/bin/sysroot_wrapper.${ccache_suffix}" || die
+    
+    "${FILESDIR}/compiler_wrapper/build.py" --config="cros.riscv" \
+      --use_ccache="${ccache_option}" \
+      --use_llvm_next="${use_llvm_next}" \
+      --output_file="${D}/usr/bin/sysroot_wrapper.riscv.${ccache_suffix}" || die
 	done
 
 	local cros_hardened_targets=(
@@ -379,12 +385,14 @@ multilib_src_install() {
 		"armv7a-cros-linux-gnueabihf"
 		"i686-pc-linux-gnu"
 		"x86_64-cros-linux-gnu"
-    "riscv64-cros-linux-gnu"
 	)
 	local cros_nonhardened_targets=(
 		"arm-none-eabi"
 		"armv7m-cros-eabi"
 	)
+  local cros_riscv_targets=(
+    "riscv64-cros-linux-gnu"
+  )
 
 	local target
 	for target in "${cros_hardened_targets[@]}"; do
@@ -395,6 +403,10 @@ multilib_src_install() {
 		dosym "sysroot_wrapper.ccache" "/usr/bin/${target}-clang"
 		dosym "sysroot_wrapper.ccache" "/usr/bin/${target}-clang++"
 	done
+  for target in "${cros_riscv_targets[@]}"; do
+    dosym "sysroot_wrapper.riscv.ccache" "/usr/bin/${target}-clang"
+    dosym "sysroot_wrapper.riscv.ccache" "/usr/bin/${target}-clang++"
+  done
 
 	# Remove this file, if it exists, to avoid installation file collision,
 	# as this file is also generated/installed by the dev-python/six package.

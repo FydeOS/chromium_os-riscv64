@@ -7,7 +7,7 @@ index e1645f2..0a441bf 100644
  trap "rm -f conftest* core a.out; exit 1" 1 2 3 15
  
 -CC=${1-cc}
-+CC="${1-cc} -mno-relax"
++CC="${1-cc} -fuse-ld=bfd"
  CFLAGS=${2-"-I. -DUNIX"}
  LFLAGS1="${LDFLAGS}"
  LFLAGS2=''

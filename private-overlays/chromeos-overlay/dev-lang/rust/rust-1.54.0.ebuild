@@ -66,19 +66,19 @@ S="${WORKDIR}/${MY_P}-src"
 # in 0001-add-cros-targets.patch.
 RUSTC_TARGET_TRIPLES=(
 	x86_64-pc-linux-gnu
-	x86_64-cros-linux-gnu
-	armv7a-cros-linux-gnueabihf
-	aarch64-cros-linux-gnu
   riscv64-cros-linux-gnu
 )
+#	x86_64-cros-linux-gnu
+#	armv7a-cros-linux-gnueabihf
+#	aarch64-cros-linux-gnu
 
 # In this context BARE means the OS part of the triple is none and gcc is used for C/C++ and
 # linking.
 RUSTC_BARE_TARGET_TRIPLES=(
-	thumbv6m-none-eabi # Cortex-M0, M0+, M1
-	thumbv7m-none-eabi # Cortex-M3
-	thumbv7em-none-eabihf # Cortex-M4F, M7F, FPU, hardfloat
 )
+#	thumbv6m-none-eabi # Cortex-M0, M0+, M1
+#	thumbv7m-none-eabi # Cortex-M3
+#	thumbv7em-none-eabihf # Cortex-M4F, M7F, FPU, hardfloat
 
 pkg_setup() {
 	python-any-r1_pkg_setup
@@ -88,7 +88,7 @@ pkg_setup() {
 		for tt in "${RUSTC_TARGET_TRIPLES[@]}" ; do
 			which "${tt}-clang" >/dev/null || die "missing toolchain ${tt}"
 		done
-		which "arm-none-eabi-gcc" >/dev/null || die "missing toolchain arm-none-eabi"
+#		which "arm-none-eabi-gcc" >/dev/null || die "missing toolchain arm-none-eabi"
 	fi
 }
 

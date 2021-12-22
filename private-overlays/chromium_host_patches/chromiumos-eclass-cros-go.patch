@@ -12,8 +12,8 @@ index 6d33057b9a53..4321be9bc340 100644
 +
 +cros_go_riscv() {
 +	GOPATH="$(cros-go_gopath)" GO111MODULE=auto \
-+	CGO_CFLAGS="-g -O2 -mno-relax" \
-+	CGO_CXXFLAGS="-g -O2 -mno-relax" $(tc-getGO) "$@" || die
++	CGO_CFLAGS="-g -O2 -fuse-ld=bfd" \
++	CGO_CXXFLAGS="-g -O2 -fuse-ld=bfd" $(tc-getGO) "$@" || die
 +}
 +
  # @FUNCTION: cros_go

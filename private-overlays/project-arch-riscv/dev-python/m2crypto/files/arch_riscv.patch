@@ -1,0 +1,39 @@
+--- a/setup.py	2021-12-13 17:28:24.133147537 +0800
++++ b/setup.py	2021-12-13 17:30:24.773993480 +0800
+@@ -167,12 +167,15 @@
+             # For RedHat-based distros, the '-D__{arch}__' option for
+             # Swig needs to be normalized, particularly on i386.
+             mach = platform.machine().lower()
++            mach = 'riscv'
+             if mach in ('i386', 'i486', 'i586', 'i686'):
+                 arch = '__i386__'
+             elif mach in ('ppc64', 'powerpc64', 'ppc64le', 'ppc64el'):
+                 arch = '__powerpc64__'
+             elif mach in ('ppc', 'powerpc'):
+                 arch = '__powerpc__'
++            elif mach in ('riscv'):
++                arch = '__riscv'
+             else:
+                 arch = '__%s__' % mach
+             self.swig_opts.append('-D%s' % arch)
+@@ -203,6 +206,7 @@
+         self.swig_opts.append('-includeall')
+         self.swig_opts.append('-modern')
+         self.swig_opts.append('-builtin')
++        self.swig_opts.append('-cpperraswarn')
+ 
+         # These two lines are a workaround for
+         # http://bugs.python.org/issue2624 , hard-coding that we are only
+--- a/SWIG/_m2crypto.i	2021-12-13 17:57:38.496562094 +0800
++++ b/SWIG/_m2crypto.i	2021-12-13 17:58:26.716166206 +0800
+@@ -15,6 +15,10 @@
+ %nothreadblock;
+ %nothreadallow;
+ 
++#ifdef __riscv
++#define __riscv_xlen 64
++#define __SIZEOF_POINTER__ 8
++#endif
+ #if SWIG_VERSION >= 0x030000
+ #define __WCHAR_MAX__ __WCHAR_MAX
+ #define __WCHAR_MIN__ __WCHAR_MIN

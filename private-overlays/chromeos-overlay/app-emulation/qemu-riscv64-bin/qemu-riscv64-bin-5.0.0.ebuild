@@ -7,7 +7,7 @@ DESCRIPTION="Statically linked x86-64 binary of app-emulation/qemu, riscv64 emul
 
 HOMEPAGE="http://www.qemu.org"
 SRC_URI="https://dev.gentoo.org/~dilfridge/distfiles/${PN}-${PVR}.tar.xz"
-LICENSE="GPL-2 LGPL-2 BSD-2"
+LICENSE="GPL-2 LGPL-2"
 SLOT="0"
 KEYWORDS="amd64"
 RESTRICT+=" mirror"

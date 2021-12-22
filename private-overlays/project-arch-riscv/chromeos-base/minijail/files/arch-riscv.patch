@@ -1,0 +1,27 @@
+diff --git a/arch.h b/arch.h
+index e027831..de31ccb 100644
+--- a/arch.h
++++ b/arch.h
+@@ -76,6 +76,9 @@
+ #    define AUDIT_ARCH_SPARC
+ #    define MINIJAIL_ARCH_NAME "sparc"
+ #  endif
++#elif defined(__riscv)
++#  define MINIJAIL_ARCH_NR AUDIT_ARCH_RISCV64
++#  define MINIJAIL_ARCH_NAME "riscv64"
+ #else
+ #  error "AUDIT_ARCH value unavailable"
+ #endif
+diff --git a/util.c b/util.c
+index 0926866..3b0298c 100644
+--- a/util.c
++++ b/util.c
+@@ -63,6 +63,8 @@ const char *log_syscalls[] = {"socket", "connect", "send", "writev"};
+ #elif defined(__powerpc__) || defined(__ia64__) || defined(__hppa__) ||        \
+       defined(__sparc__) || defined(__mips__)
+ const char *log_syscalls[] = {"socket", "connect", "send"};
++#elif defined(__riscv)
++const char *log_syscalls[] = {"socket", "connect", "sendto"};
+ #else
+ #error "Unsupported platform"
+ #endif

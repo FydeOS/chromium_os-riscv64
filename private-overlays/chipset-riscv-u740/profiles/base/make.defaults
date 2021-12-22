@@ -3,13 +3,15 @@
 # found in the LICENSE file.
 # Author: Yang Tsao<yang@fydeos.io>
 
-VIDEO_CARDS="starfive-drm"
+VIDEO_CARDS="starfive-drm softpipe virgl"
 
 USE=""
 
 USE="${USE} kernel-upstream boot_dts_device_tree transparent_hugepage -acpi_ac"
 USE="${USE} mosys_eventlog opengles"
 USE="${USE} watchdog direncription_allow_v2"
-USE="${USE} -ml_service -scanner -iioservice -fwupd -arc-camera3 -celluar -internal"
+USE="${USE} -ml_service -scanner -iioservice -fwupd -arc-camera3 -celluar -internal -crash_reporting"
+USE="${USE} cros_riscv unicode"
 
 COLLISION_IGNORE="/lib/firmware"
+FEATURES="${FEATURES} -multilib-strict"

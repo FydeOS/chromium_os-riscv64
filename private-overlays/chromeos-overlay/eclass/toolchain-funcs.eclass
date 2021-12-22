@@ -1250,10 +1250,6 @@ clang-setup-env() {
 	*) die "Clang is not yet supported for ${ARCH}"
 	esac
 
-  if [[ ${ARCH} == riscv ]] ; then
-    append-flags -mno-relax
-  fi
-
 	if use asan; then
 		local asan_flags=(
 			-fsanitize=address

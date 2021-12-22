@@ -61,7 +61,7 @@ setup-allowed-flags() {
 	ALLOWED_FLAGS+=" -mno-avx512cd -mno-avx512er -mno-avx512f -mno-avx512pf -mno-sha"
 
   #riscv
-  ALLOWED_FLAGS+=" -mno-relax"
+  ALLOWED_FLAGS+=" -fuse-ld=bfd"
 
 	# CPPFLAGS and LDFLAGS
 	ALLOWED_FLAGS+=" -I* -L* -R* -Wl,*"

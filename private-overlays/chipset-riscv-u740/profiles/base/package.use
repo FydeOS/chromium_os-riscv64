@@ -1,2 +1,4 @@
-sys-kernel/chromeos-kernel-sifive -apply_patches
+sys-kernel/chromeos-kernel-sifive apply_patches -clang -lld -llvm_ias device_tree
 >=sys-kernel/chromeos-kernel-sifive-9999 -apply_patches
+dev-libs/libffi static-libs -pax-kernel
+sys-devel/gcc go

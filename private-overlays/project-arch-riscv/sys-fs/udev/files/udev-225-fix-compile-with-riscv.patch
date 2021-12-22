@@ -1,0 +1,141 @@
+Index: systemd-225/src/basic/socket-util.c
+===================================================================
+--- systemd-225.orig/src/basic/socket-util.c
++++ systemd-225/src/basic/socket-util.c
+@@ -656,7 +656,7 @@ int socknameinfo_pretty(union sockaddr_u
+         assert(_ret);
+ 
+         r = getnameinfo(&sa->sa, salen, host, sizeof(host), NULL, 0,
+-                        NI_IDN|NI_IDN_USE_STD3_ASCII_RULES);
++                        NI_IDN);
+         if (r != 0) {
+                 int saved_errno = errno;
+ 
+Index: systemd-225/src/basic/sparse-endian.h
+===================================================================
+--- systemd-225.orig/src/basic/sparse-endian.h
++++ systemd-225/src/basic/sparse-endian.h
+@@ -29,7 +29,9 @@
+ #define __bitwise __attribute__((bitwise))
+ #define __force __attribute__((force))
+ #else
++#ifndef __bitwise
+ #define __bitwise
++#endif
+ #define __force
+ #endif
+ 
+Index: systemd-225/src/basic/missing.h
+===================================================================
+--- systemd-225.orig/src/basic/missing.h
++++ systemd-225/src/basic/missing.h
+@@ -151,6 +151,8 @@ static inline int pivot_root(const char
+ #    endif
+ #  elif defined __i386__
+ #    define __NR_memfd_create 356
++#  elif defined __riscv
++#    define __NR_memfd_create 279
+ #  else
+ #    warning "__NR_memfd_create unknown for your architecture"
+ #    define __NR_memfd_create 0xffffffff
+@@ -170,7 +172,7 @@ static inline int memfd_create(const cha
+ #    define __NR_getrandom 355
+ #  elif defined(__arm__)
+ #    define __NR_getrandom 384
+-# elif defined(__aarch64__)
++# elif defined(__aarch64__) || defined(__riscv)
+ #    define __NR_getrandom 278
+ #  elif defined(__ia64__)
+ #    define __NR_getrandom 1339
+Index: systemd-225/src/shared/architecture.c
+===================================================================
+--- systemd-225.orig/src/shared/architecture.c
++++ systemd-225/src/shared/architecture.c
+@@ -118,6 +118,9 @@ int uname_architecture(void) {
+                 { "m68k",       ARCHITECTURE_M68K     },
+ #elif defined(__tilegx__)
+                 { "tilegx",     ARCHITECTURE_TILEGX   },
++#elif defined(__riscv)
++                { "riscv64",    ARCHITECTURE_RISCV64 },
++                { "riscv",      ARCHITECTURE_RISCV64 },
+ #elif defined(__cris__)
+                 { "crisv32",    ARCHITECTURE_CRIS     },
+ #else
+@@ -170,6 +173,7 @@ static const char *const architecture_ta
+         [ARCHITECTURE_M68K] = "m68k",
+         [ARCHITECTURE_TILEGX] = "tilegx",
+         [ARCHITECTURE_CRIS] = "cris",
++        [ARCHITECTURE_RISCV64] = "riscv64",
+ };
+ 
+ DEFINE_STRING_TABLE_LOOKUP(architecture, int);
+Index: systemd-225/src/shared/architecture.h
+===================================================================
+--- systemd-225.orig/src/shared/architecture.h
++++ systemd-225/src/shared/architecture.h
+@@ -58,6 +58,7 @@ enum {
+         ARCHITECTURE_M68K,
+         ARCHITECTURE_TILEGX,
+         ARCHITECTURE_CRIS,
++        ARCHITECTURE_RISCV64,
+         _ARCHITECTURE_MAX,
+         _ARCHITECTURE_INVALID = -1
+ };
+@@ -184,6 +185,9 @@ int uname_architecture(void);
+ #elif defined(__cris__)
+ #  define native_architecture() ARCHITECTURE_CRIS
+ #  error "Missing LIB_ARCH_TUPLE for CRIS"
++#elif defined(__riscv)
++#  define native_architecture() ARCHITECTURE_RISCV64
++#  define LIB_ARCH_TUPLE "riscv64-linux-gnu"
+ #else
+ #  error "Please register your architecture here!"
+ #endif
+Index: systemd-225/src/shared/gpt.h
+===================================================================
+--- systemd-225.orig/src/shared/gpt.h
++++ systemd-225/src/shared/gpt.h
+@@ -33,6 +33,7 @@
+ #define GPT_ROOT_X86_64 SD_ID128_MAKE(4f,68,bc,e3,e8,cd,4d,b1,96,e7,fb,ca,f9,84,b7,09)
+ #define GPT_ROOT_ARM    SD_ID128_MAKE(69,da,d7,10,2c,e4,4e,3c,b1,6c,21,a1,d4,9a,be,d3)
+ #define GPT_ROOT_ARM_64 SD_ID128_MAKE(b9,21,b0,45,1d,f0,41,c3,af,44,4c,6f,28,0d,3f,ae)
++#define GPT_ROOT_RISCV64 SD_ID128_MAKE(72,ec,70,a6,cf,74,40,e6,bd,49,4b,da,08,e8,f2,24)
+ 
+ #define GPT_ESP         SD_ID128_MAKE(c1,2a,73,28,f8,1f,11,d2,ba,4b,00,a0,c9,3e,c9,3b)
+ #define GPT_SWAP        SD_ID128_MAKE(06,57,fd,6d,a4,ab,43,c4,84,e5,09,33,c8,4b,4f,4f)
+@@ -51,6 +52,8 @@
+ #  define GPT_ROOT_SECONDARY GPT_ROOT_ARM
+ #elif defined(__arm__) && (__BYTE_ORDER != __BIG_ENDIAN)
+ #  define GPT_ROOT_NATIVE GPT_ROOT_ARM
++#elif defined(__riscv)
++#  define GPT_ROOT_NATIVE GPT_ROOT_RISCV64
+ #endif
+ 
+ /* Flags we recognize on the root, swap, home and srv partitions when
+Index: systemd-225/src/shared/seccomp-util.c
+===================================================================
+--- systemd-225.orig/src/shared/seccomp-util.c
++++ systemd-225/src/shared/seccomp-util.c
+@@ -36,7 +36,10 @@ const char* seccomp_arch_to_string(uint3
+                 return "x32";
+         if (c == SCMP_ARCH_ARM)
+                 return "arm";
+-
++#ifdef SCMP_ARCH_RISCV64 
++        if (c == SCMP_ARCH_RISCV64)
++                return "riscv64";
++#endif
+         return NULL;
+ }
+ 
+@@ -56,6 +59,10 @@ int seccomp_arch_from_string(const char
+                 *ret = SCMP_ARCH_X32;
+         else if (streq(n, "arm"))
+                 *ret = SCMP_ARCH_ARM;
++#ifdef SCMP_ARCH_RISCV64
++        else if (streq(n, "riscv64"))
++                *ret = SCMP_ARCH_RISCV64;
++#endif
+         else
+                 return -EINVAL;
+ 

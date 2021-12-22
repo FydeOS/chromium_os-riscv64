@@ -1,0 +1,218 @@
+Index: libchrome/base/threading/platform_thread_linux.cc
+===================================================================
+--- libchrome.orig/base/threading/platform_thread_linux.cc
++++ libchrome/base/threading/platform_thread_linux.cc
+@@ -99,7 +99,7 @@ struct sched_attr {
+ #elif defined(__arm__)
+ #define __NR_sched_setattr 380
+ #define __NR_sched_getattr 381
+-#elif defined(__aarch64__)
++#elif defined(__aarch64__) || defined(__riscv)
+ #define __NR_sched_setattr 274
+ #define __NR_sched_getattr 275
+ #else
+Index: libchrome/build/build_config.h
+===================================================================
+--- libchrome.orig/build/build_config.h
++++ libchrome/build/build_config.h
+@@ -198,6 +198,11 @@
+ #define ARCH_CPU_ARM64 1
+ #define ARCH_CPU_64_BITS 1
+ #define ARCH_CPU_LITTLE_ENDIAN 1
++#elif defined(__riscv) || defined(__LP64__)
++#define ARCH_CPU_RISCV_FAMILY 1
++#define ARCH_CPU_RISCV 1
++#define ARCH_CPU_64_BITS 1
++#define ARCH_CPU_LITTLE_ENDIAN 1
+ #elif defined(__pnacl__) || defined(__asmjs__) || defined(__wasm__)
+ #define ARCH_CPU_32_BITS 1
+ #define ARCH_CPU_LITTLE_ENDIAN 1
+Index: libchrome/base/cpu.cc
+===================================================================
+--- libchrome.orig/base/cpu.cc
++++ libchrome/base/cpu.cc
+@@ -31,7 +31,8 @@
+ #endif
+ 
+ #if defined(ARCH_CPU_ARM_FAMILY) && \
+-    (defined(OS_ANDROID) || defined(OS_LINUX) || defined(OS_CHROMEOS))
++    (defined(OS_ANDROID) || defined(OS_LINUX) || defined(OS_CHROMEOS)) || \
++    defined(ARCH_CPU_RISCV_FAMILY)
+ #include <asm/hwcap.h>
+ #include <sys/auxv.h>
+ #include "base/files/file_util.h"
+@@ -150,7 +151,8 @@ uint64_t xgetbv(uint32_t xcr) {
+ #endif  // ARCH_CPU_X86_FAMILY
+ 
+ #if defined(ARCH_CPU_ARM_FAMILY) && \
+-    (defined(OS_ANDROID) || defined(OS_LINUX) || defined(OS_CHROMEOS))
++    (defined(OS_ANDROID) || defined(OS_LINUX) || defined(OS_CHROMEOS)) || \
++    defined(ARCH_CPU_RISCV_FAMILY)
+ StringPairs::const_iterator FindFirstProcCpuKey(const StringPairs& pairs,
+                                                 StringPiece key) {
+   return ranges::find_if(pairs, [key](const StringPairs::value_type& pair) {
+@@ -171,8 +173,13 @@ const ProcCpuInfo& ParseProcCpu() {
+     // and later for arm64) and is shown once per CPU. "Processor" is used in
+     // earler versions and is shown only once at the top of /proc/cpuinfo
+     // regardless of the number CPUs.
++#if defined(ARCH_CPU_RISCV_FAMILY)
++    const char kModelNamePrefix[] = "uarch";
++    const char kProcessorPrefix[] = "isa";
++#else // END RISCV
+     const char kModelNamePrefix[] = "model name";
+     const char kProcessorPrefix[] = "Processor";
++#endif // NO RISCV
+ 
+     std::string cpuinfo;
+     ReadFileToString(FilePath("/proc/cpuinfo"), &cpuinfo);
+@@ -336,7 +343,7 @@ void CPU::Initialize(bool require_brandi
+       has_non_stop_time_stamp_counter_ = true;
+     }
+   }
+-#elif defined(ARCH_CPU_ARM_FAMILY)
++#elif defined(ARCH_CPU_ARM_FAMILY) || defined(ARCH_CPU_RISCV_FAMILY)
+ #if defined(OS_ANDROID) || defined(OS_LINUX) || defined(OS_CHROMEOS)
+   if (require_branding) {
+     const ProcCpuInfo& info = ParseProcCpu();
+Index: libchrome/base/cpu.h
+===================================================================
+--- libchrome.orig/base/cpu.h
++++ libchrome/base/cpu.h
+@@ -36,7 +36,7 @@ class BASE_EXPORT CPU final {
+   // Construction path used in very early application startup. The difference
+   // between this and CPU::CPU() is that this doesn't allocate any memory, the
+   // catch is that no CPU model information is available (only features).
+-#if defined(ARCH_CPU_ARM_FAMILY)
++#if defined(ARCH_CPU_ARM_FAMILY) && defined(ARCH_CPU_RISCV_FAMILY)
+   static CPU CreateNoAllocation() { return CPU(false); }
+ #endif
+ 
+Index: libchrome/base/debug/debugger_posix.cc
+===================================================================
+--- libchrome.orig/base/debug/debugger_posix.cc
++++ libchrome/base/debug/debugger_posix.cc
+@@ -283,6 +283,8 @@ void VerifyDebugger() {}
+ #define DEBUG_BREAK_ASM() asm("break 2")
+ #elif defined(ARCH_CPU_X86_FAMILY)
+ #define DEBUG_BREAK_ASM() asm("int3")
++#elif defined(ARCH_CPU_RISCV_FAMILY)
++#define DEBUG_BREAK_ASM() asm("ebreak")
+ #endif
+ 
+ #if defined(NDEBUG) && !defined(OS_APPLE) && !defined(OS_ANDROID)
+Index: libchrome/base/immediate_crash.h
+===================================================================
+--- libchrome.orig/base/immediate_crash.h
++++ libchrome/base/immediate_crash.h
+@@ -80,6 +80,13 @@
+ #define TRAP_SEQUENCE1_() asm volatile("brk #0")
+ #define TRAP_SEQUENCE2_() asm volatile("hlt #0")
+ 
++#elif defined(ARCH_CPU_RISCV)
++#define TRAP_SEQUENCE1_() asm volatile("ebreak")
++#define TRAP_SEQUENCE2_() asm volatile( \
++  "li t0, 8\n" \
++  "csrrs x0, mhartid, t0" \
++  )
++
+ #else
+ 
+ // Crash report accuracy will not be guaranteed on other architectures, but at
+Index: libchrome/base/process/launch_posix.cc
+===================================================================
+--- libchrome.orig/base/process/launch_posix.cc
++++ libchrome/base/process/launch_posix.cc
+@@ -699,7 +699,7 @@ NOINLINE pid_t CloneAndLongjmpInChild(un
+   alignas(16) char stack_buf[PTHREAD_STACK_MIN];
+ #if defined(ARCH_CPU_X86_FAMILY) || defined(ARCH_CPU_ARM_FAMILY) ||   \
+     defined(ARCH_CPU_MIPS_FAMILY) || defined(ARCH_CPU_S390_FAMILY) || \
+-    defined(ARCH_CPU_PPC64_FAMILY)
++    defined(ARCH_CPU_PPC64_FAMILY) || defined(ARCH_CPU_RISCV_FAMILY)
+   // The stack grows downward.
+   void* stack = stack_buf + sizeof(stack_buf);
+ #else
+Index: libchrome/base/profiler/module_cache_unittest.cc
+===================================================================
+--- libchrome.orig/base/profiler/module_cache_unittest.cc
++++ libchrome/base/profiler/module_cache_unittest.cc
+@@ -94,7 +94,8 @@ const ModuleCache::Module* AddNonNativeM
+ }
+ 
+ #if (defined(OS_POSIX) && !defined(OS_IOS) && !defined(ARCH_CPU_ARM64)) || \
+-    (defined(OS_FUCHSIA) && !defined(ARCH_CPU_ARM64)) || defined(OS_WIN)
++    (defined(OS_FUCHSIA) && !defined(ARCH_CPU_ARM64)) || defined(OS_WIN) || \
++    (defined(OS_POSIX) && !defined(ARCH_CPU_RISCV))
+ #define MAYBE_TEST(TestSuite, TestName) TEST(TestSuite, TestName)
+ #else
+ #define MAYBE_TEST(TestSuite, TestName) TEST(TestSuite, DISABLED_##TestName)
+Index: libchrome/base/profiler/register_context.h
+===================================================================
+--- libchrome.orig/base/profiler/register_context.h
++++ libchrome/base/profiler/register_context.h
+@@ -128,7 +128,19 @@ inline uintptr_t& RegisterContextFramePo
+ inline uintptr_t& RegisterContextInstructionPointer(mcontext_t* context) {
+   return AsUintPtr(&context->arm_pc);
+ }
++#elif defined(ARCH_CPU_RISCV_FAMILY) && defined(ARCH_CPU_64_BITS)
+ 
++inline uintptr_t& RegisterContextStackPointer(mcontext_t* context) {
++  return AsUintPtr(&context->__gregs[REG_SP]);
++}
++
++inline uintptr_t& RegisterContextFramePointer(mcontext_t* context) {
++  return AsUintPtr(&context->__gregs[REG_S0]);
++}
++
++inline uintptr_t& RegisterContextInstructionPointer(mcontext_t* context) {
++  return AsUintPtr(&context->__gregs[REG_PC]);
++}
+ #elif defined(ARCH_CPU_ARM_FAMILY) && defined(ARCH_CPU_64_BITS)
+ 
+ inline uintptr_t& RegisterContextStackPointer(mcontext_t* context) {
+Index: libchrome/base/profiler/thread_delegate_posix.cc
+===================================================================
+--- libchrome.orig/base/profiler/thread_delegate_posix.cc
++++ libchrome/base/profiler/thread_delegate_posix.cc
+@@ -148,6 +148,16 @@ std::vector<uintptr_t*> ThreadDelegatePo
+       reinterpret_cast<uintptr_t*>(&thread_context->gregs[REG_R15]),
+       reinterpret_cast<uintptr_t*>(&thread_context->gregs[REG_RSP]),
+   };
++#elif defined(ARCH_CPU_RISCV_FAMILY) && defined(ARCH_CPU_64_BITS)
++  std::vector<uintptr_t*> registers;
++  registers.reserve(12);
++  registers.push_back(reinterpret_cast<uintptr_t*>(&thread_context->__gregs[REG_SP]));
++  registers.push_back(reinterpret_cast<uintptr_t*>(&thread_context->__gregs[REG_RA]));
++  registers.push_back(reinterpret_cast<uintptr_t*>(&thread_context->__gregs[REG_TP]));
++  registers.push_back(reinterpret_cast<uintptr_t*>(&thread_context->__gregs[REG_S0]));
++  for (size_t i = 10; i <= 17; ++i)
++    registers.push_back(reinterpret_cast<uintptr_t*>(&thread_context->__gregs[i]));
++  return registers;
+ #else  // #if defined(ARCH_CPU_ARM_FAMILY) && defined(ARCH_CPU_32_BITS)
+   // Unimplemented for other architectures.
+   return {};
+Index: libchrome/base/system/sys_info.cc
+===================================================================
+--- libchrome.orig/base/system/sys_info.cc
++++ libchrome/base/system/sys_info.cc
+@@ -124,6 +124,8 @@ std::string SysInfo::ProcessCPUArchitect
+   return "ARM";
+ #elif defined(ARCH_CPU_ARM64)
+   return "ARM_64";
++#elif defined(ARCH_CPU_RISCV)
++  return "riscv";
+ #else
+   return std::string();
+ #endif
+Index: libchrome/base/system/sys_info_linux.cc
+===================================================================
+--- libchrome.orig/base/system/sys_info_linux.cc
++++ libchrome/base/system/sys_info_linux.cc
+@@ -78,6 +78,8 @@ std::string SysInfo::CPUModelName() {
+ #if (BUILDFLAG(IS_CHROMEOS_ASH) || BUILDFLAG(IS_CHROMEOS_LACROS)) && \
+     defined(ARCH_CPU_ARMEL)
+   const char kCpuModelPrefix[] = "Hardware";
++#elif defined(ARCH_CPU_RISCV)
++  const char kCpuModelPrefix[] = "uarch";
+ #else
+   const char kCpuModelPrefix[] = "model name";
+ #endif

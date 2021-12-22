@@ -44,7 +44,7 @@ src_configure() {
 		--includedir=/usr/include
 		--with-linux-headers="$(get_headers)"
 	)
-  export CC="$CC -mno-relax"
+  export CC="$CC -fuse-ld=bfd"
   einfo "CC:$CC"
 	econf "${myeconfargs[@]}"
 }

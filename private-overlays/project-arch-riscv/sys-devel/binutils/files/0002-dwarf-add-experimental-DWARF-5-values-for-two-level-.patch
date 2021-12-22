@@ -1,0 +1,62 @@
+From fbd01745c4baf4a6f5c21f4e964e22d5724ffb4f Mon Sep 17 00:00:00 2001
+From: Cary Coutant <ccoutant@google.com>
+Date: Tue, 23 Dec 2014 14:44:58 -0800
+Subject: [PATCH 02/14] dwarf: add experimental DWARF-5 values for two-level
+ line number tables.
+
+This change is forward-port of commit 13a142ce0959837746e61063b6b18ac70344a474
+  - https://sourceware.org/git/?p=binutils-gdb.git;a=commit;h=13a142ce0959837746e61063b6b18ac70344a474
+from upstream branch users/ccoutant/two-level-line-150331
+  - https://sourceware.org/git/?p=binutils-gdb.git;a=shortlog;h=refs/heads/users/ccoutant/two-level-line-150331
+to binutils-2_27-branch.
+
+[Adrian Ratiu: rebased from v2.27 to v2.36.1]
+
+Change-Id: I9190449f8eee61fe824fe5bd031b5aa7e7629a11
+---
+ include/dwarf2.h | 15 +++++++++++++--
+ 1 file changed, 13 insertions(+), 2 deletions(-)
+
+diff --git a/include/dwarf2.h b/include/dwarf2.h
+index 50b6ddb1f11..8f4d6aab3ed 100644
+--- a/include/dwarf2.h
++++ b/include/dwarf2.h
+@@ -244,7 +244,13 @@ enum dwarf_line_number_ops
+     /* DWARF 3.  */
+     DW_LNS_set_prologue_end = 10,
+     DW_LNS_set_epilogue_begin = 11,
+-    DW_LNS_set_isa = 12
++    DW_LNS_set_isa = 12,
++    /* Experimental DWARF 5 extensions.
++       See http://wiki.dwarfstd.org/index.php?title=TwoLevelLineTables.  */
++    DW_LNS_set_address_from_logical = 13, /* Actuals table only.  */
++    DW_LNS_set_subprogram = 13,           /* Logicals table only.  */
++    DW_LNS_inlined_call = 14,             /* Logicals table only.  */
++    DW_LNS_pop_context = 15               /* Logicals table only.  */
+   };
+ 
+ /* Line number extended opcodes.  */
+@@ -280,7 +286,7 @@ enum dwarf_line_number_hp_sfc_ops
+   };
+ 
+ /* Content type codes in line table directory_entry_format
+-   and file_name_entry_format sequences.  */
++   and file_name_entry_format sequences. (DWARF 5) */
+ enum dwarf_line_number_content_type
+   {
+     DW_LNCT_path = 0x1,
+@@ -288,6 +294,11 @@ enum dwarf_line_number_content_type
+     DW_LNCT_timestamp = 0x3,
+     DW_LNCT_size = 0x4,
+     DW_LNCT_MD5 = 0x5,
++    /* Experimental DWARF 5 extensions.
++       See http://wiki.dwarfstd.org/index.php?title=TwoLevelLineTables.  */
++    DW_LNCT_subprogram_name = 0x6,
++    DW_LNCT_decl_file = 0x7,
++    DW_LNCT_decl_line = 0x8,
+     DW_LNCT_lo_user = 0x2000,
+     DW_LNCT_hi_user = 0x3fff
+   };
+-- 
+2.32.0
+

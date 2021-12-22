@@ -288,8 +288,8 @@ cros-go_gopath() {
 # Sets up GOPATH, and uses the appropriate cross-compiler.
 cros_go() {
 	GOPATH="$(cros-go_gopath)" GO111MODULE=auto \
-  CGO_CFLAGS="-g -O2 -mno-relax" \
-  CGO_CXXFLAGS="-g -O2 -mno-relax" $(tc-getGO) "$@" || die
+  CGO_CFLAGS="-g -O2 -fuse-ld=bfd" \
+  CGO_CXXFLAGS="-g -O2 -fuse-ld=bfd" $(tc-getGO) "$@" || die
 }
 
 # @FUNCTION: go_list

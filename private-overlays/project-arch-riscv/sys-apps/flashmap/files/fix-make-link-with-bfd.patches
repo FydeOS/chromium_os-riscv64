@@ -1,0 +1,13 @@
+Index: flashmap-0.3/Makefile
+===================================================================
+--- flashmap-0.3.orig/Makefile
++++ flashmap-0.3/Makefile
+@@ -97,7 +97,7 @@ $(SRC_LIBDIR)/libfmap.a:
+ 	ar rcs $@ $(SRC_LIBDIR)/*.o
+ 
+ $(SHARED_OBJ_FILE): $(SRC_LIBDIR)/libfmap.a
+-	$(CC) -fpic -shared -Wl,-soname,$(SHARED_OBJ_SONAME) -o $@ -Wl,-whole-archive $^ -Wl,-no-whole-archive
++	$(CC) -fuse-ld=bfd -fpic -shared -Wl,-soname,$(SHARED_OBJ_SONAME) -o $@ -Wl,-whole-archive $^ -Wl,-no-whole-archive
+ 
+ $(PROGRAMS): $(SRC_LIBDIR)/libfmap.a
+ 	$(CC) $(CFLAGS) $(LINKOPTS) -I. -o $@ $@.c $^

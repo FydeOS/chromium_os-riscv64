@@ -1,0 +1,105 @@
+# Copyright 2020 The Chromium OS Authors. All rights reserved.
+# Distributed under the terms of the GNU General Public License v2
+
+# @ECLASS: cros-riscv.eclass
+# @BLURB: eclass for building riscv64 binaries on riscv
+# @DESCRIPTION:
+# Multilib builds are not supported in Chrome OS. A simple workaround for riscv64
+# builds on riscv is to use the host toolchain. This eclass provides helper
+# functions for riscv64 environment setup, as well as integration with platform2
+# packages. The "cros_riscv" USE flag determines whether a package should also
+# build riscv64 binaries on riscv.
+
+inherit cros-workon
+
+IUSE="cros_riscv"
+
+# Setup the build env to create 64bit objects.
+# Force use of stdlibc++ in 64 mode (crbug.com/747696).
+board_setup_riscv_64bit_au_env()
+{
+	[[ $# -eq 0 ]] || die "${FUNCNAME}: takes no arguments"
+
+	__AU_OLD_ARCH=${ARCH}
+	__AU_OLD_ABI=${ABI}
+	__AU_OLD_LIBDIR_lp64d=${LIBDIR_lp64d}
+	__AU_OLD_CC=${CC}
+	__AU_OLD_CXX=${CXX}
+	export ARCH=riscv ABI=lp64d LIBDIR_lp64d="lib64/lp64d"
+	if [[ ${CC} == *"clang"* ]]; then
+		export CC=riscv64-cros-linux-gnu-clang
+		export CXX=riscv64-cros-linux-gnu-clang++
+	fi
+	__AU_OLD_SYSROOT=${SYSROOT}
+  einfo "__AU_OLD_SYSROOT:$__AU_OLD_SYSROOT"
+	export LIBCHROME_SYSROOT=${SYSROOT}
+	export SYSROOT=/usr/riscv64-cros-linux-gnu
+	append-ldflags -L"${__AU_OLD_SYSROOT}"/usr/lib64/lp64d -L"${SYSROOT}"/usr/lib64/lp64d
+	append-cppflags -I"${__AU_OLD_SYSROOT}"/usr/include
+  #-idirafter
+	# Link to libc and libstdc++ statically, because the riscv64 shared
+	# libraries are not available on riscv. In addition, disable sanitizers
+	# for 64-bit builds.
+	append-flags -static -fno-sanitize=all -fuse-ld=bfd
+	append-ldflags -static -fno-sanitize=all
+}
+
+# undo what we did in the above function
+board_teardown_riscv_64bit_au_env()
+{
+	[[ $# -eq 0 ]] || die "${FUNCNAME}: takes no arguments"
+	[ -z "${__AU_OLD_SYSROOT}" ] && \
+		die "board_setup_64bit_au_env must be called first"
+
+	filter-ldflags -L"${__AU_OLD_SYSROOT}"/usr/lib64/lp64d -L"${SYSROOT}"/usr/lib64/lp64d
+	filter-flags -I"${__AU_OLD_SYSROOT}"/usr/include
+	filter-flags -static -fno-sanitize=all -fuse-ld=bfd
+	export SYSROOT=${__AU_OLD_SYSROOT}
+	export LIBDIR_lp64d=${__AU_OLD_LIBDIR_lp64d}
+	export ABI=${__AU_OLD_ABI}
+	export ARCH=${__AU_OLD_ARCH}
+	if [[ ${CC} == *"clang"* ]]; then
+		export CC=${__AU_OLD_CC}
+		export CXX=${__AU_OLD_CXX}
+	fi
+	unset LIBCHROME_SYSROOT
+}
+
+# An ebuild inheriting from "cros-riscv" should also build riscv64 binaries if this
+# returns 0. The "riscv" check allows the "cros_riscv" USE flag to be enabled for
+# an overlay inherited by non-riscv boards.
+use_riscv() { use cros_riscv && use riscv; }
+
+push_riscv64_env() {
+	board_setup_riscv_64bit_au_env
+}
+
+pop_riscv64_env() {
+	export CXX=${__AU_OLD_CXX}
+	export CC=${__AU_OLD_CC}
+	board_teardown_riscv_64bit_au_env
+}
+
+_get_riscv64_cache() {
+	echo "$(cros-workon_get_build_dir)/riscv"
+}
+
+platform_src_configure_riscv() {
+	local cache=$(_get_riscv64_cache)
+	push_riscv64_env
+	cros-debug-add-NDEBUG
+	append-lfs-flags
+	platform_configure "--cache_dir=${cache}" "$@"
+	pop_riscv64_env
+}
+
+platform_src_compile_riscv() {
+	local cache=$(_get_riscv64_cache)
+	push_riscv64_env
+	platform "compile" "--cache_dir=${cache}" "$@"
+	pop_riscv64_env
+}
+
+platform_out_riscv() {
+	echo "$(_get_riscv64_cache)/out/Default"
+}

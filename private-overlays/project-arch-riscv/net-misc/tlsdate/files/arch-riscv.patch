@@ -1,0 +1,13 @@
+diff --git a/src/seccomp.c b/src/seccomp.c
+index 2c6a08b..8b05227 100644
+--- a/src/seccomp.c
++++ b/src/seccomp.c
+@@ -64,6 +64,8 @@
+ #      define SECCOMP_AUDIT_ARCH AUDIT_ARCH_MIPSEL
+ #    endif
+ #  endif
++#elif defined(__riscv)
++#  define SECCOMP_AUDIT_ARCH AUDIT_ARCH_RISCV64
+ #else
+ #  error "Platform does not support seccomp filter yet"
+ #endif

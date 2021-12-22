@@ -16,7 +16,8 @@ FCFLAGS="${CFLAGS}"
 SYMLINK_LIB="no"
 
 # Flags for lp64d
-LIBDIR_lp64d="lib64/lp64d"
+# Change to lib64 to make any libs happy
+LIBDIR_lp64d="lib64"
 CFLAGS_lp64d="-mabi=lp64d"
 LDFLAGS_lp64d="-m elf64lriscv"
 CHOST_lp64d="riscv64-unknown-linux-gnu"

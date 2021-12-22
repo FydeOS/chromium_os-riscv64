@@ -1,0 +1,50 @@
+Index: media_v4l2_test.cc
+===================================================================
+--- a/media_v4l2_test.cc
++++ b/media_v4l2_test.cc
+@@ -492,6 +492,7 @@ class V4L2Test : public ::testing::Test
+   }
+ 
+   bool ExerciseROI() {
++  #ifndef __riscv
+     v4l2_selection selection;
+     v4l2_selection selection_min;
+     v4l2_selection selection_max;
+@@ -539,6 +540,9 @@ class V4L2Test : public ::testing::Test
+       return false;
+     }
+     return true;
++#else
++    return false;
++#endif
+   }
+ 
+   void RunCapture(V4L2Device::IOMethod io,
+@@ -715,8 +719,12 @@ TEST_F(V4L2Test, SetControl) {
+ 
+ TEST_F(V4L2Test, SetROI) {
+   if (g_env->check_roi_control_) {
++#ifdef __riscv
++    ASSERT_TRUE(false);
++#else
+     ExerciseControl(V4L2_CID_REGION_OF_INTEREST_AUTO, "roi auto");
+     ASSERT_TRUE(ExerciseROI());
++#endif
+   } else {
+     GTEST_SKIP() << "Skipped because enable_face_detection is not set";
+   }
+Index: v4l2_test/media_v4l2_test.cc
+===================================================================
+--- v4l2_test.orig/media_v4l2_test.cc
++++ v4l2_test/media_v4l2_test.cc
+@@ -55,8 +55,10 @@ constexpr char kHalv3TestList[] = "halv3
+ constexpr char kCertificationTestList[] = "certification";
+ // Correctness check the V4L2_SEL_TGT_ROI_BOUNDS_MIN value. 320x320 is very
+ // large.
++#ifndef __riscv
+ constexpr uint32_t kMaxMinRoiWidth = 320;
+ constexpr uint32_t kMaxMinRoiHeight = 320;
++#endif
+ 
+ std::string GetUsbVidPid(const base::FilePath& path) {
+   auto read_id = [&](const char* name) -> std::string {

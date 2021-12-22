@@ -90,6 +90,8 @@ func getConfig(configName string, useCCache bool, useLlvmNext bool, version stri
 		cfg = *crosHostConfig
 	case "android":
 		cfg = *androidConfig
+  case "cros.riscv":
+    cfg = *crosRiscvConfig
 	default:
 		return nil, newErrorwithSourceLocf("unknown config name: %s", configName)
 	}
@@ -101,6 +103,49 @@ func getConfig(configName string, useCCache bool, useLlvmNext bool, version stri
 	}
 	cfg.version = version
 	return &cfg, nil
+}
+
+var crosRiscvConfig = &config{
+  clangRootRelPath: "../..",
+  gccRootRelPath:   "../../../../..",
+  commonFlags: []string{
+    "-fcommon",
+    "-fstack-protector-strong",
+    "-fPIE",
+    "-pie",
+    "-D_FORTIFY_SOURCE=2",
+    "-fno-omit-frame-pointer",
+  },
+  gccFlags: []string{
+    "-fno-reorder-blocks-and-partition",
+    "-Wno-unused-local-typedefs",
+    "-Wno-maybe-uninitialized",
+  },
+  clangFlags: []string{
+    "-Qunused-arguments",
+    "-fno-addrsig",
+    "-fdebug-default-version=5",
+    "-Wno-tautological-constant-compare",
+    "-Wno-tautological-unsigned-enum-zero-compare",
+    "-Wno-unknown-warning-option",
+    "-Wno-section",
+    "-fuse-ld=bfd",
+    "--unwindlib=libgcc",
+    "-Wno-final-dtor-non-final-class",
+    "-Werror=poison-system-directories",
+    "-fexperimental-new-pass-manager",
+    "-Wno-compound-token-split-by-macro",
+    "-Wno-deprecated-declarations",
+  },
+  clangPostFlags: []string{
+    "-Wno-implicit-int-float-conversion",
+    "-Wno-compound-token-split-by-space",
+    "-Wno-string-concatenation",
+    "-Wno-deprecated-copy",
+  },
+  newWarningsDir:    "/tmp/fatal_clang_warnings",
+  triciumNitsDir:    "/tmp/linting_output/clang-tidy",
+  crashArtifactsDir: "/tmp/clang_crash_diagnostics",
 }
 
 // Full hardening.

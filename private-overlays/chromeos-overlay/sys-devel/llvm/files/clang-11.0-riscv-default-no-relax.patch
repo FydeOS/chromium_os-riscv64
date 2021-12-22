@@ -1,0 +1,13 @@
+Index: llvm-riscv-13.0_pre428724_p20210813/clang/lib/Driver/ToolChains/Arch/RISCV.cpp
+===================================================================
+--- llvm-riscv-13.0_pre428724_p20210813.orig/clang/lib/Driver/ToolChains/Arch/RISCV.cpp
++++ llvm-riscv-13.0_pre428724_p20210813/clang/lib/Driver/ToolChains/Arch/RISCV.cpp
+@@ -555,7 +555,7 @@ void riscv::getRISCVTargetFeatures(const
+     Features.push_back("+reserve-x31");
+ 
+   // -mrelax is default, unless -mno-relax is specified.
+-  if (Args.hasFlag(options::OPT_mrelax, options::OPT_mno_relax, true))
++  if (Args.hasFlag(options::OPT_mrelax, options::OPT_mno_relax, false))
+     Features.push_back("+relax");
+   else
+     Features.push_back("-relax");
