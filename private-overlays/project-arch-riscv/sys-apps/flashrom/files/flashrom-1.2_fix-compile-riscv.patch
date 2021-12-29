@@ -1,0 +1,25 @@
+Index: flashrom-v1.2/hwaccess.h
+===================================================================
+--- flashrom-v1.2.orig/hwaccess.h
++++ flashrom-v1.2/hwaccess.h
+@@ -294,6 +294,7 @@ int libpayload_wrmsr(int addr, msr_t msr
+ #elif IS_ARC
+ 
+ /* Non memory mapped I/O is not supported on ARC. */
++#elif IS_RISCV
+ 
+ #else
+ 
+Index: flashrom-v1.2/platform.h
+===================================================================
+--- flashrom-v1.2.orig/platform.h
++++ flashrom-v1.2/platform.h
+@@ -133,6 +133,8 @@
+ #define __FLASHROM_LITTLE_ENDIAN__ 1
+ #endif
+ 
++#elif IS_RISCV
++#define __FLASHROM_LITTLE_ENDIAN__ 1
+ #endif /* IS_? */
+ 
+ #if !defined (__FLASHROM_BIG_ENDIAN__) && !defined (__FLASHROM_LITTLE_ENDIAN__)

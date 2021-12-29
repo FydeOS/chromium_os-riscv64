@@ -1,1 +1,3 @@
 chromeos-base/google-breakpad cros_riscv
+chromeos-base/chromeos-chrome -nacl
+#media-libs/webrtc-apm asan

@@ -1,0 +1,26 @@
+diff --git a/meson.build b/meson.build
+index 74aaee29..33ff26cc 100644
+--- a/meson.build
++++ b/meson.build
+@@ -16,7 +16,7 @@ endif
+ arch = host_machine.cpu_family()
+ if arch == 'x86' or arch == 'x86_64'
+   conf_data.set('CONFIG_PLATFORM_ARCH_X86', 1)
+-elif arch == 'arm' or arch == 'aarch64'
++elif arch == 'arm' or arch == 'aarch64' or arch == 'riscv'
+   conf_data.set('CONFIG_PLATFORM_ARCH_ARMEL', 1)
+ endif
+ 
+diff --git a/meson_options.txt b/meson_options.txt
+index 5b3883ce..4eaa3f2d 100644
+--- a/meson_options.txt
++++ b/meson_options.txt
+@@ -2,7 +2,7 @@ option(
+   'arch',
+   type : 'combo',
+   value: 'x86',
+-  choices: ['x86', 'x86_64', 'amd64', 'arm', 'arm64'],
++  choices: ['x86', 'x86_64', 'amd64', 'arm', 'arm64', 'riscv'],
+   description: 'The target architecture.',
+ )
+ option(

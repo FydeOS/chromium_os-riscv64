@@ -1,0 +1,168 @@
+Index: webrtc-apm/absl/base/internal/sysinfo.cc
+===================================================================
+--- webrtc-apm.orig/absl/base/internal/sysinfo.cc
++++ webrtc-apm/absl/base/internal/sysinfo.cc
+@@ -265,6 +265,10 @@ static double GetNominalCPUFrequency() {
+     return freq * 1e3;  // Value is kHz.
+   }
+ 
++  if (ReadLongFromFile("/proc/device-tree/cpus/timebase-frequency", &freq)) {
++    return freq;
++  }
++
+   return 1.0;
+ #endif  // !ABSL_INTERNAL_UNSCALED_CYCLECLOCK_FREQUENCY_IS_CPU_FREQUENCY
+ }
+Index: webrtc-apm/absl/base/internal/unscaledcycleclock.cc
+===================================================================
+--- webrtc-apm.orig/absl/base/internal/unscaledcycleclock.cc
++++ webrtc-apm/absl/base/internal/unscaledcycleclock.cc
+@@ -119,6 +119,17 @@ double UnscaledCycleClock::Frequency() {
+   return aarch64_timer_frequency;
+ }
+ 
++#elif defined(__riscv)
++int64_t UnscaledCycleClock::Now() {
++  int64_t virtual_timer_value;
++  asm volatile("csrr %0, mcycle" : "=r"(virtual_timer_value));
++  return virtual_timer_value;
++}
++
++double UnscaledCycleClock::Frequency() {
++  return base_internal::NominalCPUFrequency();
++}
++
+ #elif defined(_M_IX86) || defined(_M_X64)
+ 
+ #pragma intrinsic(__rdtsc)
+Index: webrtc-apm/absl/base/internal/unscaledcycleclock.h
+===================================================================
+--- webrtc-apm.orig/absl/base/internal/unscaledcycleclock.h
++++ webrtc-apm/absl/base/internal/unscaledcycleclock.h
+@@ -47,7 +47,7 @@
+ // The following platforms have an implementation of a hardware counter.
+ #if defined(__i386__) || defined(__x86_64__) || defined(__aarch64__) || \
+   defined(__powerpc__) || defined(__ppc__) || \
+-  defined(_M_IX86) || defined(_M_X64)
++  defined(_M_IX86) || defined(_M_X64) || defined(__riscv)
+ #define ABSL_HAVE_UNSCALED_CYCLECLOCK_IMPLEMENTATION 1
+ #else
+ #define ABSL_HAVE_UNSCALED_CYCLECLOCK_IMPLEMENTATION 0
+Index: webrtc-apm/absl/base/optimization.h
+===================================================================
+--- webrtc-apm.orig/absl/base/optimization.h
++++ webrtc-apm/absl/base/optimization.h
+@@ -76,7 +76,7 @@
+ #define ABSL_CACHELINE_SIZE 64
+ #elif defined(__powerpc64__)
+ #define ABSL_CACHELINE_SIZE 128
+-#elif defined(__aarch64__)
++#elif defined(__aarch64__) || defined(__riscv)
+ // We would need to read special register ctr_el0 to find out L1 dcache size.
+ // This value is a good estimate based on a real aarch64 machine.
+ #define ABSL_CACHELINE_SIZE 64
+Index: webrtc-apm/common-mk/BASE_VER
+===================================================================
+--- /dev/null
++++ webrtc-apm/common-mk/BASE_VER
+@@ -0,0 +1 @@
++860220
+Index: webrtc-apm/common.mk
+===================================================================
+--- webrtc-apm.orig/common.mk
++++ webrtc-apm/common.mk
+@@ -125,6 +125,7 @@ export SRC ?= $(CURDIR)
+ 
+ # If BASE_VER is not set, read the libchrome revision number from
+ # common-mk/BASE_VER file.
++BASE_VER := $(shell cat $(SYSROOT)/usr/share/libchrome/BASE_VER)
+ ifeq ($(strip $(BASE_VER)),)
+ BASE_VER := $(shell cat $(SRC)/../common-mk/BASE_VER)
+ endif
+@@ -635,6 +636,8 @@ ifeq ($(subst x86,i386,$(ARCH)),i386)
+   QEMU_ARCH := $(subst x86,i386,$(ARCH))  # x86 -> i386
+ else ifeq ($(subst amd64,x86_64,$(ARCH)),x86_64)
+   QEMU_ARCH := $(subst amd64,x86_64,$(ARCH))  # amd64 -> x86_64
++else ifeq ($(subst riscv,riscv64,$(ARCH)),riscv64)
++  QEMU_ARCH := $(subst riscv,riscv64,$(ARCH))
+ else
+   QEMU_ARCH = $(ARCH)
+ endif
+diff --git a/modules/audio_processing/module.mk b/modules/audio_processing/module.mk
+index a218cc4..29b6ddd 100644
+--- a/modules/audio_processing/module.mk
++++ b/modules/audio_processing/module.mk
+@@ -83,6 +83,63 @@ aec3_factory_CXX_OBJECTS = \
+ aec3_config_CXX_OBJECTS = \
+ 	api/audio/echo_canceller3_config.o
+ 
++aec3_cancel_CXX_OBJECTS = \
++  modules/audio_processing/aec3/aec3_common.o \
++  modules/audio_processing/aec3/block_processor.o \
++  modules/audio_processing/aec3/block_processor_metrics.o \
++  modules/audio_processing/aec3/api_call_jitter_metrics.o \
++  modules/audio_processing/aec3/echo_remover_metrics.o \
++  modules/audio_processing/aec3/render_delay_controller_metrics.o \
++  modules/audio_processing/aec3/frame_blocker.o \
++  modules/audio_processing/aec3/block_framer.o \
++  modules/audio_processing/aec3/render_delay_buffer.o \
++  modules/audio_processing/aec3/block_delay_buffer.o \
++  modules/audio_processing/aec3/render_buffer.o \
++  modules/audio_processing/aec3/block_buffer.o \
++  modules/audio_processing/aec3/spectrum_buffer.o \
++  modules/audio_processing/aec3/fft_buffer.o \
++  modules/audio_processing/aec3/downsampled_render_buffer.o \
++  modules/audio_processing/aec3/render_delay_controller.o \
++  modules/audio_processing/aec3/echo_remover.o \
++  modules/audio_processing/aec3/aec3_fft.o \
++  modules/audio_processing/aec3/subtractor.o \
++  modules/audio_processing/aec3/adaptive_fir_filter.o \
++  modules/audio_processing/aec3/adaptive_fir_filter_erl.o \
++  modules/audio_processing/aec3/suppression_filter.o \
++  modules/audio_processing/aec3/refined_filter_update_gain.o \
++  modules/audio_processing/aec3/coarse_filter_update_gain.o \
++  modules/audio_processing/aec3/subtractor_output.o \
++  modules/audio_processing/aec3/aec_state.o \
++  modules/audio_processing/aec3/suppression_gain.o \
++  modules/audio_processing/aec3/subband_nearend_detector.o \
++  modules/audio_processing/aec3/dominant_nearend_detector.o \
++  modules/audio_processing/aec3/reverb_decay_estimator.o \
++  modules/audio_processing/aec3/moving_average.o \
++  modules/audio_processing/aec3/stationarity_estimator.o \
++  modules/audio_processing/aec3/subband_erle_estimator.o \
++  modules/audio_processing/aec3/fullband_erle_estimator.o \
++  modules/audio_processing/aec3/erl_estimator.o \
++  modules/audio_processing/aec3/erle_estimator.o \
++  modules/audio_processing/aec3/residual_echo_estimator.o \
++  modules/audio_processing/aec3/signal_dependent_erle_estimator.o \
++  modules/audio_processing/aec3/echo_path_delay_estimator.o \
++  modules/audio_processing/aec3/reverb_model_estimator.o \
++  modules/audio_processing/aec3/subtractor_output_analyzer.o \
++  modules/audio_processing/aec3/render_signal_analyzer.o \
++  modules/audio_processing/aec3/filter_analyzer.o \
++  modules/audio_processing/aec3/reverb_model.o \
++  modules/audio_processing/aec3/transparent_mode.o \
++  modules/audio_processing/aec3/reverb_frequency_response.o \
++  modules/audio_processing/aec3/echo_audibility.o \
++  modules/audio_processing/aec3/comfort_noise_generator.o \
++  modules/audio_processing/aec3/matched_filter_lag_aggregator.o \
++  modules/audio_processing/aec3/matched_filter.o \
++  modules/audio_processing/aec3/alignment_mixer.o \
++  modules/audio_processing/aec3/clockdrift_detector.o \
++  modules/audio_processing/aec3/decimator.o \
++  modules/audio_processing/aec3/echo_path_variability.o \
++	modules/audio_processing/aec3/echo_canceller3.o
++
+ agc2_CXX_OBJECTS = \
+ 	modules/audio_processing/agc2/adaptive_agc.o \
+ 	modules/audio_processing/agc2/adaptive_digital_gain_applier.o \
+@@ -169,7 +226,8 @@ CXX_STATIC_LIBRARY(libaudio_processing.pic.a): \
+ 	$(aec3_factory_CXX_OBJECTS) \
+ 	$(aec3_config_CXX_OBJECTS) \
+ 	$(ns_CXX_OBJECTS) \
+-	$(capture_levels_adjuster_CXX_OBJECTS)
++	$(capture_levels_adjuster_CXX_OBJECTS) \
++	$(aec3_cancel_CXX_OBJECTS)
+ 
+ module/libaudio_processing: CXX_STATIC_LIBRARY(libaudio_processing.pic.a)
+ 

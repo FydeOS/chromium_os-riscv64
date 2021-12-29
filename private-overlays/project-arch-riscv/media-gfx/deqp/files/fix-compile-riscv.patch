@@ -1,0 +1,92 @@
+Index: work/external/vulkancts/modules/vulkan/vktInfoTests.cpp
+===================================================================
+--- work.orig/external/vulkancts/modules/vulkan/vktInfoTests.cpp
++++ work/external/vulkancts/modules/vulkan/vktInfoTests.cpp
+@@ -84,6 +84,7 @@ std::string getCpuName (int cpu)
+ 		case DE_CPU_ARM_64:		return "DE_CPU_ARM_64";
+ 		case DE_CPU_MIPS:		return "DE_CPU_MIPS";
+ 		case DE_CPU_MIPS_64:	return "DE_CPU_MIPS_64";
++    case DE_CPU_RISCV: return "DE_CPU_RISCV";
+ 		default:
+ 			return de::toString(cpu);
+ 	}
+Index: work/framework/delibs/cmake/Defs.cmake
+===================================================================
+--- work.orig/framework/delibs/cmake/Defs.cmake
++++ work/framework/delibs/cmake/Defs.cmake
+@@ -125,6 +125,7 @@ DE_MAKE_ENV_BOOL("DE_CPU" "VANILLA")
+ DE_MAKE_ENV_BOOL("DE_CPU" "X86")
+ DE_MAKE_ENV_BOOL("DE_CPU" "ARM")
+ DE_MAKE_ENV_BOOL("DE_CPU" "ARM_64")
++DE_MAKE_ENV_BOOL("DE_CPU" "RISCV")
+ 
+ # \note [petri] Re-wrote in this ugly manner, because CMake 2.6 seems to
+ #               barf about the parenthesis in the previous way. Ugh.
+Index: work/framework/delibs/debase/deDefs.c
+===================================================================
+--- work.orig/framework/delibs/debase/deDefs.c
++++ work/framework/delibs/debase/deDefs.c
+@@ -38,7 +38,7 @@ DE_STATIC_ASSERT(sizeof(deIntptr)	== siz
+ DE_STATIC_ASSERT(DE_PTR_SIZE		== sizeof(void*));
+ 
+ /* Sanity checks for DE_PTR_SIZE & DE_CPU */
+-#if !((DE_CPU == DE_CPU_X86_64 || DE_CPU == DE_CPU_ARM_64 || DE_CPU == DE_CPU_MIPS_64) && (DE_PTR_SIZE == 8)) && \
++#if !((DE_CPU == DE_CPU_X86_64 || DE_CPU == DE_CPU_ARM_64 || DE_CPU == DE_CPU_MIPS_64 || DE_CPU == DE_CPU_RISCV) && (DE_PTR_SIZE == 8)) && \
+ 	!((DE_CPU == DE_CPU_X86    || DE_CPU == DE_CPU_ARM    || DE_CPU == DE_CPU_MIPS)    && (DE_PTR_SIZE == 4))
+ #	error "DE_CPU and DE_PTR_SIZE mismatch"
+ #endif
+Index: work/framework/delibs/debase/deDefs.h
+===================================================================
+--- work.orig/framework/delibs/debase/deDefs.h
++++ work/framework/delibs/debase/deDefs.h
+@@ -108,6 +108,7 @@
+ #define DE_CPU_ARM_64	4
+ #define DE_CPU_MIPS		5
+ #define DE_CPU_MIPS_64	6
++#define DE_CPU_RISCV 7
+ 
+ /* CPU detection. */
+ #if defined(DE_CPU)
+@@ -124,6 +125,8 @@
+ #	define DE_CPU DE_CPU_MIPS
+ #elif defined(__mips__) && ((__mips) == 64)
+ #	define DE_CPU DE_CPU_MIPS_64
++#elif defined(__riscv)
++# define DE_CPU DE_CPU_RISCV
+ #else
+ #	error Unknown CPU.
+ #endif
+@@ -328,6 +331,8 @@ DE_INLINE deBool deGetTrue (void) { retu
+ #	define DE_BREAKPOINT() do { printf("Software breakpoint encountered in %s, line %d\n", __FILE__, __LINE__); __asm__ __volatile__ ( "bkpt #3" ); } while (deGetFalse())
+ #elif (DE_CPU == DE_CPU_ARM_64) && (DE_COMPILER == DE_COMPILER_GCC)
+ #	define DE_BREAKPOINT() do { printf("Software breakpoint encountered in %s, line %d\n", __FILE__, __LINE__); __asm__ __volatile__ ( "brk #3" ); } while (deGetFalse())
++#elif (DE_CPU == DE_CPU_RISCV) && (DE_COMPILER == DE_COMPILER_GCC)
++# define DE_BREAKPOINT() do { printf("Software breakpoint encountered in %s, line %d\n", __FILE__, __LINE__); __asm__ __volatile__ ( "ebreak" ); } while (deGetFalse())
+ #elif ((DE_CPU == DE_CPU_ARM) || (DE_CPU == DE_CPU_ARM_64)) && (DE_COMPILER == DE_COMPILER_MSC)
+ #	define DE_BREAKPOINT() do { printf("Software breakpoint encountered in %s, line %d\n", __FILE__, __LINE__); DebugBreak(); } while (deGetFalse())
+ #else
+Index: work/modules/internal/ditBuildInfoTests.cpp
+===================================================================
+--- work.orig/modules/internal/ditBuildInfoTests.cpp
++++ work/modules/internal/ditBuildInfoTests.cpp
+@@ -71,6 +71,7 @@ static const char* getCpuName (int cpu)
+ 		case DE_CPU_ARM_64:		return "DE_CPU_ARM_64";
+ 		case DE_CPU_MIPS:		return "DE_CPU_MIPS";
+ 		case DE_CPU_MIPS_64:	return "DE_CPU_MIPS_64";
++    case DE_CPU_RISCV: return "DE_CPU_RISCV";
+ 		default:
+ 			return DE_NULL;
+ 	}
+Index: work/targets/android/ndk-modern.cmake
+===================================================================
+--- work.orig/targets/android/ndk-modern.cmake
++++ work/targets/android/ndk-modern.cmake
+@@ -56,6 +56,8 @@ elseif (ANDROID_ABI STREQUAL "arm64-v8a"
+ 	set(DE_CPU "DE_CPU_ARM_64")
+ elseif (ANDROID_ABI STREQUAL "x86_64")
+ 	set(DE_CPU "DE_CPU_X86_64")
++elseif (NDROID_ABI STREQUAL "riscv64")
++  set(DE_CPU "DE_CPU_RISCV")
+ else ()
+ 	message(FATAL_ERROR "Unknown ABI \"${ANDROID_ABI}\"")
+ endif ()

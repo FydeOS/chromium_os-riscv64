@@ -23,3 +23,7 @@ clone_policy_from_arm64_with_filter() {
   echo $dest
   test_policy $dest  
 }
+
+clone_policy_from_arm64_with_renameat2() {
+  clone_policy_from_arm64_with_filter $1 "s/renameat:/renameat2:/g"
+}
