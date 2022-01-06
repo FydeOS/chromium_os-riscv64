@@ -1,0 +1,123 @@
+diff --git a/build/config/android/abi.gni b/build/config/android/abi.gni
+index 9f2f14b30d5db..5577e57c287b4 100644
+--- a/build/config/android/abi.gni
++++ b/build/config/android/abi.gni
+@@ -69,11 +69,14 @@ if (current_cpu == "x86") {
+ 
+   # Place holder for mips64 support, not tested.
+   android_abi_target = "mips64el-linux-android"
++} else if (current_cpu == "riscv64") {
++  android_app_abi = "lp64d"
++  android_abi_target = "riscv64-linux-android"
+ } else {
+   assert(false, "Unknown Android ABI: " + current_cpu)
+ }
+ 
+-if (target_cpu == "arm64" || target_cpu == "x64" || target_cpu == "mips64el") {
++if (target_cpu == "arm64" || target_cpu == "x64" || target_cpu == "mips64el" || target_cpu == "riscv64") {
+   android_64bit_target_cpu = true
+ } else if (target_cpu == "arm" || target_cpu == "x86" ||
+            target_cpu == "mipsel") {
+diff --git a/build/config/android/config.gni b/build/config/android/config.gni
+index a3c5da17057a3..7a3b1750cdc2b 100644
+--- a/build/config/android/config.gni
++++ b/build/config/android/config.gni
+@@ -332,6 +332,8 @@ if (is_android || is_chromeos) {
+     android_prebuilt_arch = "android-arm64"
+   } else if (current_cpu == "mips64el") {
+     android_prebuilt_arch = "android-mips64"
++  } else if (current_cpu == "riscv64") {
++    android_prebuilt_arch = "android-riscv64"
+   } else {
+     assert(false, "Need android libgcc support for your target arch.")
+   }
+diff --git a/build/config/sysroot.gni b/build/config/sysroot.gni
+index 18d2d573627c8..2f8ea409f2d00 100644
+--- a/build/config/sysroot.gni
++++ b/build/config/sysroot.gni
+@@ -23,7 +23,7 @@ declare_args() {
+   # is empty, default sysroot is calculated.
+   use_sysroot = current_cpu == "x86" || current_cpu == "x64" ||
+                 current_cpu == "arm" || current_cpu == "arm64" ||
+-                current_cpu == "mipsel" || current_cpu == "mips64el"
++                current_cpu == "mipsel" || current_cpu == "mips64el" || current_cpu == "riscv64"
+ }
+ 
+ if (sysroot == "") {
+@@ -50,6 +50,8 @@ if (sysroot == "") {
+       sysroot = "$target_sysroot_dir/debian_sid_arm-sysroot"
+     } else if (current_cpu == "arm64") {
+       sysroot = "$target_sysroot_dir/debian_sid_arm64-sysroot"
++    } else if (current_cpu == "riscv64") {
++      sysroot = "$target_sysroot_dir/debian_sid_riscv64-sysroot"
+     } else {
+       assert(false, "No linux sysroot for cpu: $target_cpu")
+     }
+diff --git a/build/linux/sysroot_scripts/install-sysroot.py b/build/linux/sysroot_scripts/install-sysroot.py
+index ada6208644cb2..f20276aa0fd47 100755
+--- a/build/linux/sysroot_scripts/install-sysroot.py
++++ b/build/linux/sysroot_scripts/install-sysroot.py
+@@ -45,7 +45,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+ URL_PREFIX = 'https://commondatastorage.googleapis.com'
+ URL_PATH = 'chrome-linux-sysroot/toolchain'
+ 
+-VALID_ARCHS = ('arm', 'arm64', 'i386', 'amd64', 'mips', 'mips64el')
++VALID_ARCHS = ('arm', 'arm64', 'i386', 'amd64', 'mips', 'mips64el', 'riscv64')
+ 
+ ARCH_TRANSLATIONS = {
+     'x64': 'amd64',
+diff --git a/build/linux/sysroot_scripts/sysroots.json b/build/linux/sysroot_scripts/sysroots.json
+index 63b6d981ea324..d794912d50412 100644
+--- a/build/linux/sysroot_scripts/sysroots.json
++++ b/build/linux/sysroot_scripts/sysroots.json
+@@ -33,5 +33,10 @@
+         "Sha1Sum": "27d205329440aa96002da71968a0dbef09aa7d6a",
+         "SysrootDir": "debian_sid_mips64el-sysroot",
+         "Tarball": "debian_sid_mips64el_sysroot.tar.xz"
++    },
++    "sid_riscv64": {
++        "Sha1Sum": "25ff0bfd3a5a908fce52445801e8bf5029098a05",
++        "SysrootDir": "debian_sid_riscv64-sysroot",
++        "Tarball": "debian_sid_riscv64_sysroot.tar.xz"
+     }
+ }
+diff --git a/build/toolchain/linux/BUILD.gn b/build/toolchain/linux/BUILD.gn
+index 2f99002ac7091..99177fb94d80d 100644
+--- a/build/toolchain/linux/BUILD.gn
++++ b/build/toolchain/linux/BUILD.gn
+@@ -30,6 +30,35 @@ clang_toolchain("clang_arm64") {
+   }
+ }
+ 
++clang_toolchain("clang_riscv64") {
++  toolprefix = "riscv64-linux-gnu-"
++  toolchain_args = {
++     current_cpu = "riscv64"
++     current_os = "linux"
++  }
++}
++
++gcc_toolchain("riscv64") {
++  toolprefix = "riscv64-linux-gnu-"
++
++  cc = "${toolprefix}gcc"
++  cxx = "${toolprefix}g++"
++
++  ar = "${toolprefix}ar"
++  ld = cxx
++  readelf = "${toolprefix}readelf"
++  nm = "${toolprefix}nm"
++
++  toolchain_args = {
++    current_cpu = "riscv64"
++    current_os = "linux"
++
++    # reclient does not support gcc.
++    use_remoteexec = false
++    is_clang = false
++  }
++}
++
+ gcc_toolchain("arm64") {
+   toolprefix = "aarch64-linux-gnu-"
+ 

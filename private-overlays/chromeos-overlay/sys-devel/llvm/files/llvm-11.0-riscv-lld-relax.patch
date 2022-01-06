@@ -1,0 +1,1081 @@
+Index: lld/ELF/Arch/RISCV.cpp
+===================================================================
+--- a/lld/ELF/Arch/RISCV.cpp
++++ b/lld/ELF/Arch/RISCV.cpp
+@@ -7,6 +7,7 @@
+ //===----------------------------------------------------------------------===//
+ 
+ #include "InputFiles.h"
++#include "OutputSections.h"
+ #include "Symbols.h"
+ #include "SyntheticSections.h"
+ #include "Target.h"
+@@ -34,6 +35,7 @@
+                      const uint8_t *loc) const override;
+   void relocate(uint8_t *loc, const Relocation &rel,
+                 uint64_t val) const override;
++  void finalizeSections() const override;
+ };
+ 
+ } // end anonymous namespace
+@@ -52,6 +54,7 @@
+ 
+ enum Reg {
+   X_RA = 1,
++  X_GP = 3,
+   X_T0 = 5,
+   X_T1 = 6,
+   X_T2 = 7,
+@@ -236,16 +239,14 @@
+   case R_RISCV_TPREL_LO12_I:
+   case R_RISCV_TPREL_LO12_S:
+     return R_TPREL;
+-  case R_RISCV_RELAX:
++  case R_RISCV_GPREL_I:
++  case R_RISCV_GPREL_S:
++    return R_RISCV_GPREL;
+   case R_RISCV_TPREL_ADD:
+     return R_NONE;
++  case R_RISCV_RELAX:
+   case R_RISCV_ALIGN:
+-    // Not just a hint; always padded to the worst-case number of NOPs, so may
+-    // not currently be aligned, and without linker relaxation support we can't
+-    // delete NOPs to realign.
+-    errorOrWarn(getErrorLocation(loc) + "relocation R_RISCV_ALIGN requires "
+-                "unimplemented linker relaxation; recompile with -mno-relax");
+-    return R_NONE;
++    return R_RELAX_HINT;
+   default:
+     error(getErrorLocation(loc) + "unknown relocation (" + Twine(type) +
+           ") against symbol " + toString(s));
+@@ -371,6 +372,7 @@
+ 
+   case R_RISCV_PCREL_LO12_I:
+   case R_RISCV_TPREL_LO12_I:
++  case R_RISCV_GPREL_I:
+   case R_RISCV_LO12_I: {
+     uint64_t hi = (val + 0x800) >> 12;
+     uint64_t lo = val - (hi << 12);
+@@ -380,6 +382,7 @@
+ 
+   case R_RISCV_PCREL_LO12_S:
+   case R_RISCV_TPREL_LO12_S:
++  case R_RISCV_GPREL_S:
+   case R_RISCV_LO12_S: {
+     uint64_t hi = (val + 0x800) >> 12;
+     uint64_t lo = val - (hi << 12);
+@@ -438,6 +441,7 @@
+     break;
+ 
+   case R_RISCV_RELAX:
++  case R_RISCV_TPREL_ADD:
+     return; // Ignored (for now)
+ 
+   default:
+@@ -445,6 +449,307 @@
+   }
+ }
+ 
++static uint64_t maxOutputSectionAlignment() {
++  uint64_t maxAlign = 1;
++  for (auto *os : outputSections) {
++    maxAlign = std::max<uint64_t>(maxAlign, os->alignment);
++  }
++
++  return maxAlign;
++}
++
++static void setRs1(uint8_t *buf, int rs1) {
++  write32le(buf, (read32le(buf) & 0xfff07fff) | rs1 << 15);
++}
++
++static int64_t addWorstCaseAlignment(int64_t offset, uint64_t alignment) {
++  return offset >= 0 ? offset + alignment : offset - alignment;
++}
++
++using DeleteRanges = std::vector<InputSectionBase::DeleteRange>;
++
++static void addDeleteRange(DeleteRanges &ranges, uint64_t offset,
++                           uint64_t size) {
++  ranges.push_back({offset, size});
++}
++
++// Relax R_RISCV_CALL to jal or c.jal.
++//
++// We always assume during relaxation the symbols can only come closer modulo
++// the effects of alignment.
++static bool relaxCall(InputSection *is, Relocation &rel,
++                      DeleteRanges &deleteRanges) {
++  auto *sym = dyn_cast_or_null<Defined>(rel.sym);
++  if (!sym || !sym->section)
++    return false;
++
++  uint64_t pc = is->getVA(rel.offset);
++  uint64_t target = sym->getVA(rel.addend);
++  int64_t offset = target - pc;
++
++  // As the call site and callee may reside in different sections, we need to
++  // consider the worst case possible offset caused by alignment.
++  if (is->getOutputSection() != sym->getOutputSection()) {
++    offset = addWorstCaseAlignment(offset, maxOutputSectionAlignment());
++  } else if (is != sym->section) {
++    offset = addWorstCaseAlignment(offset, is->getOutputSection()->alignment);
++  }
++
++  bool rvc = config->eflags & EF_RISCV_RVC;
++  unsigned rd =
++      (read32le(is->data().data() + rel.offset + 4) & 0x00000fe0) >> 7;
++
++  // Convert to c.j or c.jal (RV32-only) if offset fits in 12 bits.
++  if (rvc && isInt<12>(offset) && rd == 0) {
++    write16le(is->mutableData().data() + rel.offset, 0xa001); // c.j 0
++    addDeleteRange(deleteRanges, rel.offset + 2, 6);
++    rel.type = R_RISCV_RVC_JUMP;
++    return true;
++  }
++
++  if (!config->is64 && rvc && isInt<12>(offset) && rd == 1) {
++    write16le(is->mutableData().data() + rel.offset, 0x2001); // c.jal 0
++    addDeleteRange(deleteRanges, rel.offset + 2, 6);
++    rel.type = R_RISCV_RVC_JUMP;
++    return true;
++  }
++
++  // Convert to jal if offset fits in 21 bits.
++  if (isInt<21>(offset)) {
++    write32le(is->mutableData().data() + rel.offset,
++              0x0000006f | rd << 7); // jal rd, 0
++    addDeleteRange(deleteRanges, rel.offset + 4, 4);
++    rel.type = R_RISCV_JAL;
++    return true;
++  }
++
++  return false;
++}
++
++// For R_RISCV_HI20 and R_RISCV_LO12_[IS], only relax to GP-relative form if
++// __global_pointer$ symbol is defined and the target symbol is within the
++// same section as gp. This assumes the offset between gp and the target
++// symbol is static during relaxation.
++static bool relaxHi20Lo12(InputSection *is, Relocation &rel,
++                          DeleteRanges &deleteRanges) {
++  bool rvc = config->eflags & EF_RISCV_RVC;
++  uint64_t target = rel.sym->getVA(rel.addend);
++
++  Defined *gp = ElfSym::riscvGlobalPointer;
++
++  auto relaxToCLui = [&]() -> bool {
++    unsigned rd = (read32le(is->data().data() + rel.offset) & 0x00000fe0) >> 7;
++    if (rvc &&
++        isInt<6>(SignExtend64(target + 0x800, config->wordsize * 8) >> 12) &&
++        rd != 0 && rd != 2 && target != 0) {
++      write16le(is->mutableData().data() + rel.offset,
++                0x6001 | rd << 7); // c.lui rd, 0
++      addDeleteRange(deleteRanges, rel.offset + 2, 2);
++      rel.type = R_RISCV_RVC_LUI;
++      return true;
++    }
++    return false;
++  };
++
++  if (!gp || rel.sym->getOutputSection() != gp->section->getOutputSection())
++    return rel.type == R_RISCV_HI20 ? relaxToCLui() : false;
++
++  uint64_t offset = target - gp->getVA();
++
++  if (isInt<12>(offset)) {
++    if (rel.type == R_RISCV_HI20) {
++      addDeleteRange(deleteRanges, rel.offset, 4);
++      rel.type = R_RISCV_NONE;
++      rel.expr = R_NONE;
++    } else { // R_RISCV_LO12_[IS]
++      setRs1(is->mutableData().data() + rel.offset, X_GP);
++      rel.type = rel.type == R_RISCV_LO12_I ? R_RISCV_GPREL_I : R_RISCV_GPREL_S;
++      rel.expr = R_RISCV_GPREL;
++    }
++    return true;
++  }
++
++  return false;
++}
++
++// Relaxing PCREL relocations requires two passes due to the linkage from
++// LO12 to HI20. The first pass only relaxes PCREL_LO12 and the second one
++// relaxes PCREL_HI20.
++static bool relaxPcrel(InputSection *is, Relocation &rel,
++                       DeleteRanges &deleteRanges) {
++  Defined *gp = ElfSym::riscvGlobalPointer;
++  if (!gp)
++    return false;
++
++  const Relocation *hi20 = &rel;
++  if (rel.type == R_RISCV_PCREL_LO12_I || rel.type == R_RISCV_PCREL_LO12_S) {
++    hi20 = getRISCVPCRelHi20(rel.sym, rel.addend);
++    if (!hi20)
++      return false;
++  }
++
++  if (hi20->sym->getOutputSection() != gp->section->getOutputSection())
++    return false;
++
++  uint64_t target = hi20->sym->getVA(hi20->addend);
++  uint64_t offset = target - gp->getVA();
++
++  if (isInt<12>(offset)) {
++    if (rel.type == R_RISCV_PCREL_HI20) {
++      addDeleteRange(deleteRanges, rel.offset, 4);
++      rel.type = R_RISCV_NONE;
++      rel.expr = R_NONE;
++    } else {
++      setRs1(is->mutableData().data() + rel.offset, X_GP);
++      rel.sym = hi20->sym;
++      rel.addend = hi20->addend + rel.addend;
++      rel.type =
++          rel.type == R_RISCV_PCREL_LO12_I ? R_RISCV_GPREL_I : R_RISCV_GPREL_S;
++      rel.expr = R_RISCV_GPREL;
++    }
++    return true;
++  }
++
++  return false;
++}
++
++template <typename F>
++void processRelaxations(MutableArrayRef<Relocation> rels, F f) {
++  if (rels.empty())
++    return;
++
++  for (auto *r = rels.begin() + 1, *e = rels.end(); r != e; ++r) {
++    if (r->type != R_RISCV_RELAX)
++      continue;
++
++    Relocation *rel = std::prev(r);
++    if (r->offset != rel->offset)
++      continue;
++
++    if (f(*rel)) {
++      r->type = R_RISCV_NONE;
++      r->expr = R_NONE;
++    }
++  }
++}
++
++static bool relax() {
++  bool changed = false;
++
++  for (OutputSection *os : outputSections) {
++    for (InputSection *is : getInputSections(os)) {
++      if (!(is->flags & SHF_EXECINSTR))
++        continue;
++
++      DeleteRanges deleteRanges;
++      processRelaxations(is->relocations, [&](Relocation &rel) {
++        switch (rel.type) {
++        case R_RISCV_CALL:
++        case R_RISCV_CALL_PLT:
++          return relaxCall(is, rel, deleteRanges);
++        case R_RISCV_HI20:
++        case R_RISCV_LO12_I:
++        case R_RISCV_LO12_S:
++          return relaxHi20Lo12(is, rel, deleteRanges);
++        case R_RISCV_PCREL_LO12_I:
++        case R_RISCV_PCREL_LO12_S:
++          return relaxPcrel(is, rel, deleteRanges);
++        }
++
++        return false;
++      });
++
++      // The second-pass for PCREL_HI20 relaxation.
++      processRelaxations(is->relocations, [&](Relocation &rel) {
++        if (rel.type != R_RISCV_PCREL_HI20)
++          return false;
++
++        return relaxPcrel(is, rel, deleteRanges);
++      });
++
++      using DeleteRange = InputSectionBase::DeleteRange;
++      llvm::sort(deleteRanges,
++                 [](const DeleteRange &lhs, const DeleteRange &rhs) {
++                   return lhs.offset < rhs.offset;
++                 });
++
++      is->deleteRanges(deleteRanges);
++      script->assignAddresses();
++      changed |= !deleteRanges.empty();
++    }
++  }
++
++  return changed;
++}
++
++static void relaxAlign() {
++  bool rvc = config->eflags & EF_RISCV_RVC;
++
++  for (OutputSection *os : outputSections) {
++    for (InputSection *is : getInputSections(os)) {
++      if (!(is->flags & SHF_EXECINSTR))
++        continue;
++
++      uint64_t bytesDeleted = 0;
++      DeleteRanges deleteRanges;
++      for (auto &rel : is->relocations) {
++        if (rel.type == R_RISCV_ALIGN && rel.addend > 0) {
++          uint64_t pc = is->getVA(rel.offset) - bytesDeleted;
++          uint64_t alignment = PowerOf2Ceil(rel.addend + 2);
++          uint64_t nopBytes = alignTo(pc, alignment) - pc;
++
++          if (nopBytes % 2 != 0 || (!rvc && nopBytes % 4 != 0)) {
++            errorOrWarn(is->getObjMsg(rel.offset) + ": alignment requires " +
++                        Twine(nopBytes) + " of nop");
++            break;
++          }
++
++          if (nopBytes > (uint64_t)rel.addend) {
++            errorOrWarn(is->getObjMsg(rel.offset) + ": alignment requires " +
++                        Twine(nopBytes) + " of nop, but only " +
++                        Twine(rel.addend) + " bytes are available");
++            break;
++          }
++          uint64_t bytesToDelete = rel.addend - nopBytes;
++
++          if (bytesToDelete > 0) {
++            addDeleteRange(deleteRanges, rel.offset + nopBytes, bytesToDelete);
++            bytesDeleted += bytesToDelete;
++          }
++
++          uint8_t *buf = is->mutableData().data() + rel.offset;
++          while (nopBytes != 0) {
++            if (nopBytes >= 4) {
++              write32le(buf, 0x00000013); // nop
++              nopBytes -= 4;
++              buf += 4;
++            } else if (rvc && nopBytes == 2) {
++              write16le(buf, 0x0001); // c.nop
++              nopBytes -= 2;
++              buf += 2;
++            }
++          }
++        }
++      }
++
++      is->deleteRanges(deleteRanges);
++      script->assignAddresses();
++    }
++  }
++}
++
++void RISCV::finalizeSections() const {
++  // Can't perform relaxation if it is not a final link.
++  if (config->relocatable)
++    return;
++
++  if (config->relax)
++    while (relax())
++      ;
++
++  relaxAlign();
++}
++
+ TargetInfo *elf::getRISCVTargetInfo() {
+   static RISCV target;
+   return &target;
+Index: lld/ELF/Config.h
+===================================================================
+--- a/lld/ELF/Config.h
++++ b/lld/ELF/Config.h
+@@ -195,6 +195,7 @@
+   bool pie;
+   bool printGcSections;
+   bool printIcfSections;
++  bool relax;
+   bool relocatable;
+   bool relrPackDynRelocs;
+   bool saveTemps;
+Index: lld/ELF/Driver.cpp
+===================================================================
+--- a/lld/ELF/Driver.cpp
++++ b/lld/ELF/Driver.cpp
+@@ -1065,6 +1065,7 @@
+   config->printArchiveStats = args.getLastArgValue(OPT_print_archive_stats);
+   config->printSymbolOrder =
+       args.getLastArgValue(OPT_print_symbol_order);
++  config->relax = args.hasFlag(OPT_relax, OPT_no_relax, true);
+   config->rpath = getRpath(args);
+   config->relocatable = args.hasArg(OPT_relocatable);
+   config->saveTemps = args.hasArg(OPT_save_temps);
+Index: lld/ELF/InputSection.h
+===================================================================
+--- a/lld/ELF/InputSection.h
++++ b/lld/ELF/InputSection.h
+@@ -13,6 +13,7 @@
+ #include "Relocations.h"
+ #include "Thunks.h"
+ #include "lld/Common/LLVM.h"
++#include "lld/Common/Memory.h"
+ #include "llvm/ADT/CachedHashString.h"
+ #include "llvm/ADT/DenseSet.h"
+ #include "llvm/ADT/TinyPtrVector.h"
+@@ -158,6 +159,29 @@
+     return rawData;
+   }
+ 
++  MutableArrayRef<uint8_t> mutableData() const {
++    if (!copiedData) {
++      size_t size = data().size();
++      uint8_t *mutData = bAlloc.Allocate<uint8_t>(size);
++      memcpy(mutData, data().data(), size);
++      rawData = llvm::makeArrayRef(mutData, size);
++      copiedData = true;
++    }
++
++    return llvm::makeMutableArrayRef(const_cast<uint8_t *>(rawData.data()),
++                                     rawData.size());
++  }
++
++  // A pair of range to delete in (offset, size)
++  struct DeleteRange {
++    uint64_t offset;
++    uint64_t size;
++  };
++
++  // Delete ranges and adjust section content, symbols and relocations.
++  // The deleteRanges must be sorted by offset and must not overlap.
++  void deleteRanges(ArrayRef<DeleteRange> deleteRanges);
++
+   uint64_t getOffsetInFile() const;
+ 
+   // Input sections are part of an output section. Special sections
+@@ -242,6 +266,7 @@
+   void uncompress() const;
+ 
+   mutable ArrayRef<uint8_t> rawData;
++  mutable bool copiedData;
+ 
+   // This field stores the uncompressed size of the compressed data in rawData,
+   // or -1 if rawData is not compressed (either because the section wasn't
+@@ -391,9 +416,9 @@
+ };
+ 
+ #ifdef _WIN32
+-static_assert(sizeof(InputSection) <= 192, "InputSection is too big");
++static_assert(sizeof(InputSection) <= 200, "InputSection is too big");
+ #else
+-static_assert(sizeof(InputSection) <= 184, "InputSection is too big");
++static_assert(sizeof(InputSection) <= 192, "InputSection is too big");
+ #endif
+ 
+ inline bool isDebugSection(const InputSectionBase &sec) {
+@@ -409,6 +434,7 @@
+ // STT_SECTION symbol associated to the .toc input section.
+ extern llvm::DenseSet<std::pair<const Symbol *, uint64_t>> ppc64noTocRelax;
+ 
++Relocation *getRISCVPCRelHi20(const Symbol *sym, uint64_t addend);
+ } // namespace elf
+ 
+ std::string toString(const elf::InputSectionBase *);
+Index: lld/ELF/InputSection.cpp
+===================================================================
+--- a/lld/ELF/InputSection.cpp
++++ b/lld/ELF/InputSection.cpp
+@@ -63,7 +63,7 @@
+                                    StringRef name, Kind sectionKind)
+     : SectionBase(sectionKind, name, flags, entsize, alignment, type, info,
+                   link),
+-      file(file), rawData(data) {
++      file(file), rawData(data), copiedData(false) {
+   // In order to reduce memory allocation, we assume that mergeable
+   // sections are smaller than 4 GiB, which is not an unreasonable
+   // assumption as of 2017.
+@@ -165,6 +165,86 @@
+   return secStart - fileStart;
+ }
+ 
++void InputSectionBase::deleteRanges(ArrayRef<DeleteRange> ranges) {
++  if (ranges.empty())
++    return;
++
++  // Adjust all symbol offsets and sizes within the InputSection, using the
++  // following algorithm to avoid quadratic behavior.
++
++  // Gather all symbols within the section.
++  SmallVector<Defined *> symbols;
++  for (auto &sym : file->getSymbols()) {
++    auto *dr = dyn_cast<Defined>(sym);
++    if (!dr || dr->section != this)
++      continue;
++
++    symbols.push_back(dr);
++  }
++
++  // Sort symbols by their starting address.
++  llvm::sort(symbols, [](const Defined *a, const Defined *b) {
++    return a->value < b->value;
++  });
++
++  // Adjust each symbol's address by bytes deleted and also enlarge the symbol's
++  // size to keep its "end" fixed.
++  {
++    uint64_t removedBytes = 0;
++    const auto *r = ranges.begin(), *rend = ranges.end();
++    for (auto *dr : symbols) {
++      for (; r != rend && r->offset < dr->value; ++r)
++        removedBytes += r->size;
++
++      dr->value -= removedBytes;
++      dr->size += removedBytes;
++    }
++  }
++
++  const auto endOff = [](const Defined *dr) { return dr->value + dr->size; };
++
++  // Sort symbols by their "end" address before relaxation.
++  llvm::sort(symbols, [&](const Defined *a, const Defined *b) {
++    return endOff(a) < endOff(b);
++  });
++
++  // Adjust each symbol's end address to their actual end by reducing size.
++  {
++    uint64_t removedBytes = 0;
++    const auto *r = ranges.begin(), *rend = ranges.end();
++    for (auto *dr : symbols) {
++      for (; r != rend && r->offset < endOff(dr); ++r)
++        removedBytes += r->size;
++
++      dr->size -= removedBytes;
++    }
++  }
++
++  // Adjust relocation offsets within the section.
++  uint64_t removedBytes = 0;
++  const auto *r = ranges.begin(), *rend = ranges.end();
++  for (auto &rel : relocations) {
++    for (; r != rend && r->offset < rel.offset; ++r)
++      removedBytes += r->size;
++
++    rel.offset -= removedBytes;
++  }
++
++  // Adjust section content piece-wise and resize the section.
++  MutableArrayRef<uint8_t> buf = this->mutableData();
++  auto *dst = buf.begin() + ranges.begin()->offset;
++  for (auto it = ranges.begin(), e = ranges.end(); it != e; ++it) {
++    auto *from = buf.begin() + it->offset + it->size;
++    auto *to = std::next(it) != ranges.end()
++                   ? (buf.begin() + std::next(it)->offset)
++                   : buf.end();
++    dst = std::copy(from, to, dst);
++  }
++
++  // Resize the section
++  rawData = makeArrayRef(data().data(), dst);
++}
++
+ uint64_t SectionBase::getOffset(uint64_t offset) const {
+   switch (kind()) {
+   case Output: {
+@@ -589,7 +669,7 @@
+ //
+ // This function returns the R_RISCV_PCREL_HI20 relocation from
+ // R_RISCV_PCREL_LO12's symbol and addend.
+-static Relocation *getRISCVPCRelHi20(const Symbol *sym, uint64_t addend) {
++Relocation *lld::elf::getRISCVPCRelHi20(const Symbol *sym, uint64_t addend) {
+   const Defined *d = cast<Defined>(sym);
+   if (!d->section) {
+     error("R_RISCV_PCREL_LO12 relocation points to an absolute symbol: " +
+@@ -752,6 +832,13 @@
+     uint64_t val = sym.isUndefWeak() ? p + a : sym.getVA(a);
+     return getAArch64Page(val) - getAArch64Page(p);
+   }
++  case R_RISCV_GPREL: {
++    if (!ElfSym::riscvGlobalPointer)
++      llvm_unreachable(
++          "Cannot compute R_RISCV_GPREL if __global_pointer$ is not set");
++
++    return sym.getVA(a) - ElfSym::riscvGlobalPointer->getVA();
++  }
+   case R_RISCV_PC_INDIRECT: {
+     if (const Relocation *hiRel = getRISCVPCRelHi20(&sym, a))
+       return getRelocTargetVA(file, hiRel->type, hiRel->addend, sym.getVA(),
+@@ -1023,6 +1110,10 @@
+     if (auto *sec = dyn_cast<InputSection>(this))
+       addrLoc += sec->outSecOff;
+     RelExpr expr = rel.expr;
++
++    if (expr == R_NONE || expr == R_RELAX_HINT)
++      continue;
++
+     uint64_t targetVA = SignExtend64(
+         getRelocTargetVA(file, type, rel.addend, addrLoc, *rel.sym, expr),
+         bits);
+Index: lld/ELF/Options.td
+===================================================================
+--- a/lld/ELF/Options.td
++++ b/lld/ELF/Options.td
+@@ -351,6 +351,8 @@
+   Eq<"reproduce",
+      "Write tar file containing inputs and command to reproduce link">;
+ 
++defm relax: B<"relax", "Enable linker relaxation (default)", "Disable linker relaxation">;
++
+ defm rosegment: BB<"rosegment",
+   "Put read-only non-executable sections in their own segment (default)",
+   "Do not put read-only non-executable sections in their own segment">;
+@@ -692,7 +694,6 @@
+ def: F<"no-ctors-in-init-array">;
+ def: F<"no-keep-memory">;
+ def: F<"no-pipeline-knowledge">;
+-def: F<"no-relax">;
+ def: F<"no-warn-mismatch">;
+ def: Flag<["-"], "p">;
+ def: Separate<["--", "-"], "rpath-link">;
+Index: lld/ELF/Relocations.h
+===================================================================
+--- a/lld/ELF/Relocations.h
++++ b/lld/ELF/Relocations.h
+@@ -45,6 +45,7 @@
+   R_PC,
+   R_PLT,
+   R_PLT_PC,
++  R_RELAX_HINT,
+   R_RELAX_GOT_PC,
+   R_RELAX_GOT_PC_NOPIC,
+   R_RELAX_TLS_GD_TO_IE,
+@@ -99,6 +100,7 @@
+   R_PPC64_TOCBASE,
+   R_PPC64_RELAX_GOT_PC,
+   R_RISCV_ADD,
++  R_RISCV_GPREL,
+   R_RISCV_PC_INDIRECT,
+ };
+ 
+Index: lld/ELF/Relocations.cpp
+===================================================================
+--- a/lld/ELF/Relocations.cpp
++++ b/lld/ELF/Relocations.cpp
+@@ -125,35 +125,29 @@
+ }
+ 
+ namespace {
+-// Build a bitmask with one bit set for each RelExpr.
+-//
+-// Constexpr function arguments can't be used in static asserts, so we
+-// use template arguments to build the mask.
+-// But function template partial specializations don't exist (needed
+-// for base case of the recursion), so we need a dummy struct.
+-template <RelExpr... Exprs> struct RelExprMaskBuilder {
+-  static inline uint64_t build() { return 0; }
+-};
++// Build a bitmask with one bit set for each 64 subset of RelExpr.
++constexpr uint64_t buildMask() { return 0; }
+ 
+-// Specialization for recursive case.
+-template <RelExpr Head, RelExpr... Tail>
+-struct RelExprMaskBuilder<Head, Tail...> {
+-  static inline uint64_t build() {
+-    static_assert(0 <= Head && Head < 64,
+-                  "RelExpr is too large for 64-bit mask!");
+-    return (uint64_t(1) << Head) | RelExprMaskBuilder<Tail...>::build();
+-  }
+-};
++template <typename... Tails>
++constexpr uint64_t buildMask(int head, Tails... tails) {
++  return (0 <= head && head < 64 ? (uint64_t(1) << head) : 0) |
++         buildMask(tails...);
++}
+ } // namespace
+ 
+ // Return true if `Expr` is one of `Exprs`.
+-// There are fewer than 64 RelExpr's, so we can represent any set of
+-// RelExpr's as a constant bit mask and test for membership with a
+-// couple cheap bitwise operations.
++// There are more than 64 but less than 128 RelExprs, so we divide the set of
++// exprs into [0, 63] and [64, 127] and represent each range as a constant
++// 64-bit mask. Then we decide which mask to test depending on the value of
++// expr and use a simple shift and bitwise-and to test for membership.
+ template <RelExpr... Exprs> bool oneof(RelExpr expr) {
+-  assert(0 <= expr && (int)expr < 64 &&
+-         "RelExpr is too large for 64-bit mask!");
+-  return (uint64_t(1) << expr) & RelExprMaskBuilder<Exprs...>::build();
++  assert(0 <= expr && (int)expr < 128 &&
++         "RelExpr is too large for 128-bit mask!");
++
++  if (expr >= 64)
++    return (uint64_t(1) << (expr - 64)) & buildMask((Exprs - 64)...);
++
++  return (uint64_t(1) << expr) & buildMask(Exprs...);
+ }
+ 
+ // This function is similar to the `handleTlsRelocation`. MIPS does not
+@@ -412,8 +406,7 @@
+             R_PLT_PC, R_TLSGD_GOT, R_TLSGD_GOTPLT, R_TLSGD_PC, R_PPC32_PLTREL,
+             R_PPC64_CALL_PLT, R_PPC64_RELAX_TOC, R_RISCV_ADD, R_TLSDESC_CALL,
+             R_TLSDESC_PC, R_AARCH64_TLSDESC_PAGE, R_TLSLD_HINT, R_TLSIE_HINT,
+-            R_AARCH64_GOT_PAGE>(
+-          e))
++            R_AARCH64_GOT_PAGE, R_RELAX_HINT>(e))
+     return true;
+ 
+   // These never do, except if the entire file is position dependent or if
+Index: lld/ELF/Target.h
+===================================================================
+--- a/lld/ELF/Target.h
++++ b/lld/ELF/Target.h
+@@ -91,6 +91,8 @@
+   virtual void applyJumpInstrMod(uint8_t *loc, JumpModType type,
+                                  JumpModType val) const {}
+ 
++  virtual void finalizeSections() const {}
++
+   virtual ~TargetInfo();
+ 
+   // This deletes a jump insn at the end of the section if it is a fall thru to
+Index: lld/ELF/Writer.cpp
+===================================================================
+--- a/lld/ELF/Writer.cpp
++++ b/lld/ELF/Writer.cpp
+@@ -1731,6 +1731,8 @@
+   if (config->emachine == EM_HEXAGON)
+     hexagonTLSSymbolUpdate(outputSections);
+ 
++  target->finalizeSections();
++
+   int assignPasses = 0;
+   for (;;) {
+     bool changed = target->needsThunks && tc.createThunks(outputSections);
+Index: lld/test/ELF/riscv-gp.s
+===================================================================
+--- a/lld/test/ELF/riscv-gp.s
++++ b/lld/test/ELF/riscv-gp.s
+@@ -1,14 +1,16 @@
+ # REQUIRES: riscv
+-# RUN: llvm-mc -filetype=obj -triple=riscv32 %s -o %t.32.o
++# RUN: llvm-mc -filetype=obj -triple=riscv32 -mattr=+relax %s -o %t.32.o
+ # RUN: ld.lld -pie %t.32.o -o %t.32
+ # RUN: llvm-readelf -s %t.32 | FileCheck --check-prefix=SYM32 %s
+ # RUN: llvm-readelf -S %t.32 | FileCheck --check-prefix=SEC32 %s
++# RUN: llvm-objdump -d --print-imm-hex %t.32 | FileCheck --check-prefix=DIS32 %s
+ # RUN: not ld.lld -shared %t.32.o -o /dev/null 2>&1 | FileCheck --check-prefix=ERR %s
+ 
+-# RUN: llvm-mc -filetype=obj -triple=riscv64 %s -o %t.64.o
++# RUN: llvm-mc -filetype=obj -triple=riscv64 -mattr=+relax %s -o %t.64.o
+ # RUN: ld.lld -pie %t.64.o -o %t.64
+ # RUN: llvm-readelf -s %t.64 | FileCheck --check-prefix=SYM64 %s
+ # RUN: llvm-readelf -S %t.64 | FileCheck --check-prefix=SEC64 %s
++# RUN: llvm-objdump -d %t.64 | FileCheck --check-prefix=DIS64 %s
+ # RUN: not ld.lld -shared %t.64.o -o /dev/null 2>&1 | FileCheck --check-prefix=ERR %s
+ 
+ ## __global_pointer$ = .sdata+0x800 = 0x39c0
+@@ -18,12 +20,15 @@
+ # SEC64: [ 7] .sdata PROGBITS {{0*}}000032e0
+ # SYM64: {{0*}}00003ae0 0 NOTYPE GLOBAL DEFAULT 7 __global_pointer$
+ 
+-## __global_pointer$ - 0x1000 = 4096*3-2048
+-# DIS:      1000: auipc gp, 3
+-# DIS-NEXT:       addi gp, gp, -2048
++# DIS32:      auipc gp, 3
++# DIS32-NEXT: addi gp, gp, -1968
++
++# DIS64:      auipc gp, 3
++# DIS64-NEXT: addi gp, gp, -1896
+ 
+ # ERR: error: relocation R_RISCV_PCREL_HI20 cannot be used against symbol __global_pointer$; recompile with -fPIC
+ 
++.option norelax
+ lla gp, __global_pointer$
+ 
+ .section .sdata,"aw"
+Index: lld/test/ELF/riscv-relax-align-rvc.s
+===================================================================
+--- /dev/null
++++ b/lld/test/ELF/riscv-relax-align-rvc.s
+@@ -0,0 +1,31 @@
++# REQUIRES: riscv
++
++# RUN: llvm-mc -filetype=obj -triple=riscv32-unknown-elf -mattr=+c,+relax %s -o %t.rv32.o
++# RUN: llvm-mc -filetype=obj -triple=riscv64-unknown-elf -mattr=+c,+relax %s -o %t.rv64.o
++
++# RUN: ld.lld %t.rv32.o -o %t.rv32
++# RUN: ld.lld %t.rv64.o -o %t.rv64
++# RUN: llvm-objdump -d -M no-aliases --no-show-raw-insn %t.rv32 | FileCheck %s
++# RUN: llvm-objdump -d -M no-aliases --no-show-raw-insn %t.rv64 | FileCheck %s
++
++# CHECK:      c.add   a0, a1
++# CHECK-NEXT: addi    zero, zero, 0
++# CHECK-NEXT: addi    zero, zero, 0
++# CHECK-NEXT: addi    zero, zero, 0
++# CHECK-NEXT: c.nop
++# CHECK-NEXT: c.add   s0, s1
++# CHECK-NEXT: c.add   s2, s3
++# CHECK-NEXT: c.add   s4, s5
++# CHECK-NEXT: c.nop
++# CHECK-NEXT: c.add   t0, t1
++
++.global _start
++_start:
++.balign 4
++  c.add a0, a1
++.balign 16
++  c.add s0, s1
++  c.add s2, s3
++  c.add s4, s5
++.balign 8
++  c.add t0, t1
+Index: lld/test/ELF/riscv-relax-align.s
+===================================================================
+--- /dev/null
++++ b/lld/test/ELF/riscv-relax-align.s
+@@ -0,0 +1,33 @@
++# REQUIRES: riscv
++
++# RUN: llvm-mc -filetype=obj -triple=riscv32-unknown-elf -mattr=+relax %s -o %t.rv32.o
++# RUN: llvm-mc -filetype=obj -triple=riscv64-unknown-elf -mattr=+relax %s -o %t.rv64.o
++
++# RUN: ld.lld %t.rv32.o -o %t.rv32
++# RUN: ld.lld %t.rv64.o -o %t.rv64
++# RUN: llvm-objdump -d --no-show-raw-insn %t.rv32 | FileCheck %s
++# RUN: llvm-objdump -d --no-show-raw-insn %t.rv64 | FileCheck %s
++
++# Check that alignment is always handled regardless of --relax option
++# RUN: ld.lld --no-relax %t.rv32.o -o %t-no-relax.rv32
++# RUN: ld.lld --no-relax %t.rv64.o -o %t-no-relax.rv64
++# RUN: llvm-objdump -d --no-show-raw-insn %t-no-relax.rv32 | FileCheck %s
++# RUN: llvm-objdump -d --no-show-raw-insn %t-no-relax.rv64 | FileCheck %s
++
++# CHECK:      add     a0, a1, a2
++# CHECK-NEXT: add     a3, a4, a5
++# CHECK-NEXT: nop
++# CHECK-NEXT: nop
++# CHECK-NEXT: add     s0, s1, s2
++# CHECK-NEXT: add     t0, t1, t2
++
++.global _start
++_start:
++.balign 4
++  add a0, a1, a2
++  add a3, a4, a5
++.balign 16
++  add s0, s1, s2
++.balign 4
++.balign 4
++  add t0, t1, t2
+Index: lld/test/ELF/riscv-relax-call.s
+===================================================================
+--- /dev/null
++++ b/lld/test/ELF/riscv-relax-call.s
+@@ -0,0 +1,72 @@
++# REQUIRES: riscv
++
++# RUN: llvm-mc -filetype=obj -triple=riscv32-unknown-elf -mattr=+relax %s -o %t.rv32.o
++# RUN: llvm-mc -filetype=obj -triple=riscv64-unknown-elf -mattr=+relax %s -o %t.rv64.o
++# RUN: llvm-mc -filetype=obj -triple=riscv32-unknown-elf -mattr=+c,+relax %s -o %t.rv32c.o
++# RUN: llvm-mc -filetype=obj -triple=riscv64-unknown-elf -mattr=+c,+relax %s -o %t.rv64c.o
++
++# jal relaxation
++# RUN: ld.lld %t.rv32.o --defsym foo=_start+20 -o %t.rv32
++# RUN: ld.lld %t.rv64.o --defsym foo=_start+20 -o %t.rv64
++# RUN: llvm-objdump -d -M no-aliases --no-show-raw-insn %t.rv32 | FileCheck --check-prefix=JAL %s
++# RUN: llvm-objdump -d -M no-aliases --no-show-raw-insn %t.rv64 | FileCheck --check-prefix=JAL %s
++# JAL:      jal     ra, {{.*}} <foo>
++# JAL-NEXT: jal     zero, {{.*}} <foo>
++
++# c.j and c.jal (RV32C-only) relaxation
++# RUN: ld.lld %t.rv32c.o --defsym foo=_start+20 -o %t.rv32c
++# RUN: ld.lld %t.rv64c.o --defsym foo=_start+20 -o %t.rv64c
++# RUN: llvm-objdump -d -M no-aliases --no-show-raw-insn %t.rv32c | FileCheck --check-prefix=RV32C %s
++# RUN: llvm-objdump -d -M no-aliases --no-show-raw-insn %t.rv64c | FileCheck --check-prefix=RV64C %s
++# RV32C:      c.jal     {{.*}} <foo>
++# RV32C-NEXT: c.j       {{.*}} <foo>
++# RV64C:      jal       ra, {{.*}} <foo>
++# RV64C-NEXT: c.j       {{.*}} <foo>
++
++# Don't relax to c.j/c.jal if out of range
++# RUN: ld.lld %t.rv32c.o --defsym foo=_start+0x1004 -o %t.rv32c
++# RUN: ld.lld %t.rv64c.o --defsym foo=_start+0x1004 -o %t.rv64c
++# RUN: llvm-objdump -d -M no-aliases --no-show-raw-insn %t.rv32c | FileCheck --check-prefix=JAL %s
++# RUN: llvm-objdump -d -M no-aliases --no-show-raw-insn %t.rv64c | FileCheck --check-prefix=JAL %s
++
++# Don't relax if out of range (for the first call)
++# RUN: ld.lld %t.rv32c.o --defsym foo=_start+0x100000 -o %t-boundary.rv32
++# RUN: ld.lld %t.rv64c.o --defsym foo=_start+0x100000 -o %t-boundary.rv64
++# RUN: llvm-objdump -d -M no-aliases --no-show-raw-insn %t-boundary.rv32 | FileCheck --check-prefix=BOUNDARY %s
++# RUN: llvm-objdump -d -M no-aliases --no-show-raw-insn %t-boundary.rv64 | FileCheck --check-prefix=BOUNDARY %s
++# BOUNDARY:      auipc  ra, 256
++# BOUNDARY-NEXT: jalr   ra, 0(ra)
++# BOUNDARY-NEXT: jal    zero, {{.*}} <foo>
++
++# Check relaxation works across output sections
++# RUN: echo 'SECTIONS { .text 0x100000 : { *(.text) } .foo : ALIGN(8) { foo = .; } }' > %t-cross-section.lds
++# RUN: ld.lld %t.rv32c.o %t-cross-section.lds -o %t-cross-section.rv32
++# RUN: ld.lld %t.rv64c.o %t-cross-section.lds -o %t-cross-section.rv64
++# RUN: llvm-objdump -d -M no-aliases --no-show-raw-insn %t-cross-section.rv32 | FileCheck --check-prefix=RV32C %s
++# RUN: llvm-objdump -d -M no-aliases --no-show-raw-insn %t-cross-section.rv64 | FileCheck --check-prefix=RV64C %s
++
++# Test for output section alignment checking during relaxation. The .foo section
++# cannot be moved closer due to alignment so lld must not relax the call, even
++# though it seems it may be in range before relaxation.
++
++# RUN: echo 'SECTIONS { .text 0x100000 : { *(.text); } .foo : ALIGN(0x100000) { foo = .; } }' > %t-cross-section-out-of-range.lds
++# RUN: ld.lld %t.rv32c.o %t-cross-section-out-of-range.lds -o %t-cross-section-out-of-range.rv32
++# RUN: ld.lld %t.rv64c.o %t-cross-section-out-of-range.lds -o %t-cross-section-out-of-range.rv64
++# RUN: llvm-objdump -d -M no-aliases --no-show-raw-insn %t-cross-section-out-of-range.rv32 | FileCheck --check-prefix=NORELAX %s
++# RUN: llvm-objdump -d -M no-aliases --no-show-raw-insn %t-cross-section-out-of-range.rv64 | FileCheck --check-prefix=NORELAX %s
++# NORELAX:      auipc  ra, {{.*}}
++# NORELAX-NEXT: jalr   ra, {{.*}}(ra)
++# NORELAX:      auipc  t1, {{.*}}
++# NORELAX-NEXT: jalr   zero, {{.*}}(t1)
++
++# Don't relax to absolute symbols
++# RUN: ld.lld %t.rv32c.o -Ttext=0x100000 --defsym foo=0x100000 -o %t-abs.rv32
++# RUN: ld.lld %t.rv64c.o -Ttext=0x100000 --defsym foo=0x100000 -o %t-abs.rv64
++# RUN: llvm-objdump -d -M no-aliases --no-show-raw-insn %t-abs.rv32 | FileCheck --check-prefix=NORELAX %s
++# RUN: llvm-objdump -d -M no-aliases --no-show-raw-insn %t-abs.rv64 | FileCheck --check-prefix=NORELAX %s
++
++.global _start
++.p2align 3
++_start:
++  call foo
++  tail foo
+Index: lld/test/ELF/riscv-relax-hi20-lo12.s
+===================================================================
+--- /dev/null
++++ b/lld/test/ELF/riscv-relax-hi20-lo12.s
+@@ -0,0 +1,51 @@
++# REQUIRES: riscv
++
++# RUN: llvm-mc -filetype=obj -triple=riscv32-unknown-elf -mattr=+relax %s -o %t.rv32.o
++# RUN: llvm-mc -filetype=obj -triple=riscv64-unknown-elf -mattr=+relax %s -o %t.rv64.o
++# RUN: llvm-mc -filetype=obj -triple=riscv32-unknown-elf -mattr=+c,+relax %s -o %t.rv32c.o
++# RUN: llvm-mc -filetype=obj -triple=riscv64-unknown-elf -mattr=+c,+relax %s -o %t.rv64c.o
++
++# RUN: echo 'SECTIONS { .text : { *(.text) } .sdata 0x200000 : { foo = .; } }' > %t.lds
++# RUN: ld.lld --undefined=__global_pointer$ %t.rv32.o %t.lds -o %t.rv32
++# RUN: ld.lld --undefined=__global_pointer$ %t.rv64.o %t.lds -o %t.rv64
++# RUN: llvm-objdump -d -M no-aliases --no-show-raw-insn %t.rv32 | FileCheck --check-prefix=GP %s
++# RUN: llvm-objdump -d -M no-aliases --no-show-raw-insn %t.rv64 | FileCheck --check-prefix=GP %s
++# GP-NOT:  lui
++# GP:      addi    a0, gp, -2048
++# GP-NEXT: lw      a0, -2048(gp)
++# GP-NEXT: sw      a0, -2048(gp)
++
++# RUN: echo 'SECTIONS { .text : { *(.text) } .sdata 0x200000 : { foo = . + 4096; } }' > %t-out-of-range.lds
++# RUN: ld.lld --undefined=__global_pointer$ %t.rv32.o %t-out-of-range.lds -o %t.rv32-out-of-range
++# RUN: ld.lld --undefined=__global_pointer$ %t.rv64.o %t-out-of-range.lds -o %t.rv64-out-of-range
++# RUN: llvm-objdump -d -M no-aliases --no-show-raw-insn %t.rv32-out-of-range | FileCheck --check-prefix=NORELAX %s
++# RUN: llvm-objdump -d -M no-aliases --no-show-raw-insn %t.rv64-out-of-range | FileCheck --check-prefix=NORELAX %s
++# NORELAX:      lui     a0, 513
++# NORELAX-NEXT: addi    a0, a0, 0
++# NORELAX-NEXT: lw      a0, 0(a0)
++# NORELAX-NEXT: sw      a0, 0(a0)
++
++# RUN: ld.lld --defsym=foo=0x1000 %t.rv32c.o -o %t.rv32-clui
++# RUN: ld.lld --defsym=foo=0x1000 %t.rv64c.o -o %t.rv64-clui
++# RUN: llvm-objdump -d -M no-aliases --no-show-raw-insn %t.rv32-clui | FileCheck --check-prefix=CLUI %s
++# RUN: llvm-objdump -d -M no-aliases --no-show-raw-insn %t.rv64-clui | FileCheck --check-prefix=CLUI %s
++# CLUI:      c.lui   a0, 1
++# CLUI-NEXT: addi    a0, a0, 0
++# CLUI-NEXT: lw      a0, 0(a0)
++# CLUI-NEXT: sw      a0, 0(a0)
++
++# RUN: ld.lld --defsym=foo=0x10 %t.rv32c.o -o %t.rv32-cli
++# RUN: ld.lld --defsym=foo=0x10 %t.rv64c.o -o %t.rv64-cli
++# RUN: llvm-objdump -d -M no-aliases --no-show-raw-insn %t.rv32-cli | FileCheck --check-prefix=CLI %s
++# RUN: llvm-objdump -d -M no-aliases --no-show-raw-insn %t.rv64-cli | FileCheck --check-prefix=CLI %s
++# CLI:      c.li    a0, 0
++# CLI-NEXT: addi    a0, a0, 16
++# CLI-NEXT: lw      a0, 16(a0)
++# CLI-NEXT: sw      a0, 16(a0)
++
++.global _start
++_start:
++  lui a0, %hi(foo)
++  addi a0, a0, %lo(foo)
++  lw a0, %lo(foo)(a0)
++  sw a0, %lo(foo)(a0)
+Index: lld/test/ELF/riscv-relax-pcrel.s
+===================================================================
+--- /dev/null
++++ b/lld/test/ELF/riscv-relax-pcrel.s
+@@ -0,0 +1,28 @@
++# REQUIRES: riscv
++
++# RUN: llvm-mc -filetype=obj -triple=riscv32-unknown-elf -mattr=+relax %s -o %t.rv32.o
++# RUN: llvm-mc -filetype=obj -triple=riscv64-unknown-elf -mattr=+relax %s -o %t.rv64.o
++
++# RUN: echo 'SECTIONS { .text 0x100000 : { *(.text) } .sdata 0x200000 : { foo = .; } }' > %t.lds
++# RUN: ld.lld --undefined=__global_pointer$ %t.rv32.o %t.lds -o %t.rv32
++# RUN: ld.lld --undefined=__global_pointer$ %t.rv64.o %t.lds -o %t.rv64
++# RUN: llvm-objdump -d -M no-aliases --no-show-raw-insn %t.rv32 | FileCheck --check-prefix=GP %s
++# RUN: llvm-objdump -d -M no-aliases --no-show-raw-insn %t.rv64 | FileCheck --check-prefix=GP %s
++# GP-NOT:  auipc
++# GP:      addi    a0, gp, -2048
++# GP-NEXT: sw      a0, -2048(gp)
++
++# RUN: echo 'SECTIONS { .text 0x100000 : { *(.text) } .sdata 0x200000 : { foo = . + 4096; } }' > %t-norelax.lds
++# RUN: ld.lld --undefined=__global_pointer$ %t.rv32.o %t-norelax.lds -o %t-norelax.rv32
++# RUN: ld.lld --undefined=__global_pointer$ %t.rv64.o %t-norelax.lds -o %t-norelax.rv64
++# RUN: llvm-objdump -d -M no-aliases --no-show-raw-insn %t-norelax.rv32 | FileCheck --check-prefix=NORELAX %s
++# RUN: llvm-objdump -d -M no-aliases --no-show-raw-insn %t-norelax.rv64 | FileCheck --check-prefix=NORELAX %s
++# NORELAX:      auipc   a0, 257
++# NORELAX-NEXT: addi    a0, a0, 0
++# NORELAX-NEXT: sw      a0, 0(a0)
++
++.global _start
++_start:
++  auipc a0, %pcrel_hi(foo)
++  addi a0, a0, %pcrel_lo(_start)
++  sw a0, %pcrel_lo(_start)(a0)
+Index: lld/test/ELF/riscv-relax-syms.s
+===================================================================
+--- /dev/null
++++ b/lld/test/ELF/riscv-relax-syms.s
+@@ -0,0 +1,32 @@
++# REQUIRES: riscv
++
++// Check that relaxation correctly adjusts symbol addresses and sizes.
++
++# RUN: llvm-mc -filetype=obj -triple=riscv32-unknown-elf -mattr=+relax %s -o %t.rv32.o
++# RUN: llvm-mc -filetype=obj -triple=riscv64-unknown-elf -mattr=+relax %s -o %t.rv64.o
++# RUN: ld.lld -Ttext=0x100000 %t.rv32.o -o %t.rv32
++# RUN: ld.lld -Ttext=0x100000 %t.rv64.o -o %t.rv64
++
++# RUN: llvm-readelf -s %t.rv32 | FileCheck %s
++# RUN: llvm-readelf -s %t.rv64 | FileCheck %s
++
++# CHECK: 100000     4 NOTYPE  LOCAL  DEFAULT     1 a
++# CHECK: 100000     8 NOTYPE  LOCAL  DEFAULT     1 b
++# CHECK: 100004     4 NOTYPE  LOCAL  DEFAULT     1 c
++# CHECK: 100004     8 NOTYPE  LOCAL  DEFAULT     1 d
++# CHECK: 100000    12 NOTYPE  GLOBAL DEFAULT     1 _start
++
++.global _start
++_start:
++a:
++b:
++  add  a0, a1, a2
++.size a, . - a
++c:
++d:
++  call _start
++.size b, . - b
++.size c, . - c
++  add a0, a1, a2
++.size d, . - d
++.size _start, . - _start
+Index: lld/test/ELF/riscv-reloc-align.s
+===================================================================
+--- a/lld/test/ELF/riscv-reloc-align.s
++++ /dev/null
+@@ -1,12 +0,0 @@
+-# REQUIRES: riscv
+-
+-# RUN: llvm-mc -filetype=obj -triple=riscv32 -mattr=+relax %s -o %t.o
+-# RUN: not ld.lld %t.o -o /dev/null 2>&1 | FileCheck %s
+-
+-# CHECK: relocation R_RISCV_ALIGN requires unimplemented linker relaxation
+-
+-.global _start
+-_start:
+-    nop
+-    .balign 8
+-    nop

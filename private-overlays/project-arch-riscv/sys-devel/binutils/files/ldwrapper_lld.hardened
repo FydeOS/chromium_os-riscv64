@@ -6,4 +6,4 @@
 # This files wraps lld.
 # Enable smallpie, now, relro and hash-style=gnu to match gold wrapper.
 # Enable norosegment to match gold wrapper, for symbolization. b/140622025
-exec "$(dirname "$(readlink -f "$0")")"/ld.lld --pack-dyn-relocs=relr -z now -z relro --no-rosegment --hash-style=gnu -z nostart-stop-gc "$@"
+exec "$(dirname "$(readlink -f "$0")")"/ld.lld --pack-dyn-relocs=none -z now -z relro --no-rosegment --hash-style=gnu -z nostart-stop-gc "$@"

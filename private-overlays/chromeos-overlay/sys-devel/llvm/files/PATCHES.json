@@ -1034,5 +1034,10 @@
         "rel_patch_path": "cherry/80865f7579d619dee4ffd5abb72f641ef74dedbb.patch",
         "start_version": 428724,
         "end_version": 438901
+    },
+    {
+        "comment": "Fix riscv lld relaxation",
+        "rel_patch_path": "llvm-11.0-riscv-lld-relax.patch",
+        "start_version": 420001
     }
 ]
