@@ -4,7 +4,7 @@
 EAPI=7
 
 CROS_WORKON_REPO="https://github.com/starfive-tech"
-CROS_WORKON_COMMIT="86ae22a94666a654456feabcf5c2f504e59da083"
+CROS_WORKON_COMMIT="4d0bf74de3a2e2bb05b6c110d3b258d005430d7f"
 CROS_WORKON_TREE="09c563035f413f6b5f360cfa327aa651eb77c090"
 CROS_WORKON_PROJECT="linux"
 CROS_WORKON_LOCALNAME="kernel/v5.15-sifive"
@@ -19,6 +19,11 @@ inherit cros-workon cros-kernel2
 HOMEPAGE="https://www.chromium.org/chromium-os/chromiumos-design-docs/chromium-os-kernel"
 DESCRIPTION="Chrome OS Linux Kernel latest visionfive"
 KEYWORDS="*"
+
+src_compile()
+{
+	tc-export PKG_CONFIG
+}
 
 # Change the following (commented out) number to the next prime number
 # when you change "cros-kernel2.eclass" to work around http://crbug.com/220902
