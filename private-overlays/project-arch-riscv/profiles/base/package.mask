@@ -1,2 +1,3 @@
 sys-libs/ncurses::portage-stable
 chromeos-base/libchrome::chromiumos
+sys-apps/usbguard::chromiumos
