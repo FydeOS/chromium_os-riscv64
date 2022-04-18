@@ -99,14 +99,14 @@ generate_font_cache() {
 		-vK
 		-k "${WORKDIR}/out,${SYSROOT}/usr/share/cache/fontconfig,none,0x5000"
 	)
-	if [[ "${ARCH}" == "amd64" ]]; then
+
+	if [[ "${ARCH}" == "amd64" || "${ARCH}" == "riscv" ]]; then
 		# Special-case for amd64: the target ISA may not match our
 		# build host (so we can't run natively;
 		# https://crbug.com/856686), and we may not have QEMU support
 		# for the full ISA either. Just run the SDK binary instead.
 		sudo minijail0 "${jail_args[@]}" \
 			/usr/bin/fc-cache -f -v --sysroot "${SYSROOT:-/}" || die
-
 	else
 		sudo minijail0 "${jail_args[@]}" \
 			"${CHROOT_SOURCE_ROOT}"/src/platform2/common-mk/platform2_test.py \
