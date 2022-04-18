@@ -4,6 +4,7 @@ CROSSDEV=/usr/local/portage/crossdev/cross-riscv64-cros-linux-gnu
 CHROME_OVERLAY=/mnt/host/source/src/private-overlays/project-arch-riscv
 
 LINK_EBUILDS=(
+  "sys-devel/binutils"
   "sys-devel/gcc"
   "sys-libs/compiler-rt"
   "sys-devel/gdb"
@@ -40,8 +41,12 @@ build_crossdev() {
   sudo emerge sys-devel/crossdev::chromeos-overlay
 }
 
-build_qemu() {
+build_qemu_bin() {
   sudo emerge app-emulation/qemu-riscv64-bin::chromeos-overlay
+}
+
+build_qemu() {
+  sudo USE="qemu_user_targets_riscv64 qemu_softmmu_targets_riscv64" emerge app-emulation/qemu
 }
 
 build_rust() {
@@ -86,8 +91,8 @@ main() {
     echo "You must input board name with '--board=[board_name]'"
     exit 1
   fi
-  check_host_dep
   create_links
+  check_host_dep
   setup_board --nousepkg $@
   emerge-$board virtual/prepare-to-build-packages
 }

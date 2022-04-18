@@ -37,6 +37,7 @@ REQUIRED_USE="amd64"
 DEPEND="${PYTHON_DEPS}
 	>=dev-libs/libxml2-2.9.6
 	>=dev-lang/perl-5.0
+  cross-riscv64-cros-linux-gnu/compiler-rt
 "
 
 BDEPEND="dev-lang/rust-bootstrap:${BOOTSTRAP_VERSION}"

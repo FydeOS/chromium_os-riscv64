@@ -291,7 +291,7 @@ multilib_src_configure() {
 }
 
 multilib_src_compile() {
-  die "check resources"
+  #die "check resources"
 	cmake_src_compile
 
 	pax-mark m "${BUILD_DIR}"/bin/llvm-rtdyld

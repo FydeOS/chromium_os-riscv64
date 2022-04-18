@@ -1,0 +1,19 @@
+diff --git a/eclass/multilib.eclass b/eclass/multilib.eclass
+index 342d21a2e..70ca2ff3c 100644
+--- a/eclass/multilib.eclass
++++ b/eclass/multilib.eclass
+@@ -400,12 +400,12 @@ multilib_env() {
+ 			export CFLAGS_lp64d=${CFLAGS_lp64d--mabi=lp64d}
+ 			export CHOST_lp64d=${CTARGET}
+ 			export CTARGET_lp64d=${CTARGET}
+-			export LIBDIR_lp64d="lib64/lp64d"
++			export LIBDIR_lp64d="lib64"
+ 
+ 			export CFLAGS_lp64=${CFLAGS_lp64--mabi=lp64}
+ 			export CHOST_lp64=${CTARGET}
+ 			export CTARGET_lp64=${CTARGET}
+-			export LIBDIR_lp64="lib64/lp64"
++			export LIBDIR_lp64="lib64"
+ 
+ 			: ${MULTILIB_ABIS=lp64d lp64}
+ 			: ${DEFAULT_ABI=lp64d}
