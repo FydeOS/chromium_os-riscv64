@@ -2,3 +2,10 @@ sys-libs/ncurses::portage-stable
 chromeos-base/libchrome::chromiumos
 sys-apps/usbguard::chromiumos
 chromeos-base/chromeos-fonts::chromiumos
+net-print/cups::chromiumos
+chromeos-base/imagerloader::chromiumos
+chromeos-base/chrome-icu::chromiumos
+chromeos-base/spaced::chromiumos
+chromeos-base/chromeos-chrome::chromiumos
+chromeos-base/tpm_manager::chromiumos
+chromeos-base/attestation::chromiumos
