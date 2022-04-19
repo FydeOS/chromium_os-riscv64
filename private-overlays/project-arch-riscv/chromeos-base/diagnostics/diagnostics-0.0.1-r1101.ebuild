@@ -152,7 +152,7 @@ platform_pkg_test() {
 }
 
 src_compile() {
-  default
+  platform_src_compile
   local policies=$(find -name *arm64.policy)
   for policy in $policies; do
     clone_policy_from_arm64 $policy

@@ -76,7 +76,7 @@ pkg_preinst() {
 }
 
 src_compile() {
-  default
+  platform_src_compile
   clone_policy_from_arm64_with_filter \
      seccomp/imageloader-seccomp-arm64.policy \
      "s/renameat:/renameat2:/g"

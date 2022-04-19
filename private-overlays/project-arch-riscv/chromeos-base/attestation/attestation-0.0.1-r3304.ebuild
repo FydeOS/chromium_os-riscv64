@@ -111,7 +111,7 @@ platform_pkg_test() {
 }
 
 src_compile() {
-  default
+  platform_src_compile
   clone_policy_from_arm64_with_filter server/attestationd-seccomp-arm64.policy "s/renameat:/renameat2:/g"
   clone_policy_from_arm64_with_filter pca_agent/server/pca_agentd-seccomp-arm64.policy "s/renameat:/renameat2:/g"
 }

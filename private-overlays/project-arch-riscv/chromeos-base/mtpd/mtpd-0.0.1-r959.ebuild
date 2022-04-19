@@ -63,6 +63,6 @@ pkg_preinst() {
 }
 
 src_compile() {
-  default
+  platform_src_compile
   clone_policy_from_arm64 mtpd-seccomp-arm64.policy
 }

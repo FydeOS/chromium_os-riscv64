@@ -78,6 +78,6 @@ pkg_preinst() {
 }
 
 src_compile() {
-  default
+  platform_src_compile
   clone_policy_from_arm64 seccomp/dlcservice-seccomp-arm64.policy
 }

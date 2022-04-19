@@ -107,6 +107,6 @@ platform_pkg_test() {
 }
 
 src_compile() {
-  default
+  platform_src_compile
   clone_policy_from_arm64 server/tpm_managerd-seccomp-arm64.policy
 }

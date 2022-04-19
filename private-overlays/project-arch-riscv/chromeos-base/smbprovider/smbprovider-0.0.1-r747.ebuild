@@ -82,6 +82,6 @@ platform_pkg_test() {
 }
 
 src_compile() {
-  default
+  platform_src_compile
   clone_policy_from_arm64_with_renameat2 seccomp_filters/smbprovider-seccomp-arm64.policy
 }

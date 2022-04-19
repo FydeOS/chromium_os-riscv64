@@ -67,6 +67,6 @@ src_install() {
 }
 
 src_compile() {
-  default
+  cros-rust_src_compile $@
   clone_policy_from_arm64 seccomp/ippusb-bridge-seccomp-arm64.policy
 }

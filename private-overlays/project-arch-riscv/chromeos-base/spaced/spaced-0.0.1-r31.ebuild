@@ -28,7 +28,7 @@ pkg_preinst() {
 }
 
 src_compile() {
-  default
+  platform_src_compile
   cat seccomp/spaced-seccomp-arm64.policy | sed "s/renameat:/renameat2:/g" > seccomp/spaced-seccomp-riscv.policy
 }
 

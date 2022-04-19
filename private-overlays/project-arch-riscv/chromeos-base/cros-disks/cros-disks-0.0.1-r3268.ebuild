@@ -138,7 +138,7 @@ platform_pkg_test() {
 }
 
 src_compile() {
-  default
+  platform_src_compile
   clone_policy_from_arm64 archivemount-seccomp-arm64.policy
   clone_policy_from_arm64 fuse-zip-seccomp-arm64.policy
   clone_policy_from_arm64 rar2fs-seccomp-arm64.policy

@@ -89,7 +89,7 @@ platform_pkg_test() {
 }
 
 src_compile() {
-  default
+  platform_src_compile
   clone_policy_from_arm64 seccomp_filters/oobe_config_restore-seccomp-arm64.policy
   clone_policy_from_arm64 seccomp_filters/oobe_config_save-seccomp-arm64.policy
 }

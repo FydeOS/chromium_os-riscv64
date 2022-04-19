@@ -75,6 +75,6 @@ pkg_setup() {
 }
 
 src_compile() {
-  default
+  platform_src_compile
   clone_policy_from_arm64 seccomp/usb_bouncer-seccomp-arm64.policy
 }
