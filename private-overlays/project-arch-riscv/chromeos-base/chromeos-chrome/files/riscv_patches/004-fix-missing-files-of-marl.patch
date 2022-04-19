@@ -1,0 +1,17 @@
+diff --git a/third_party/swiftshader/third_party/marl/BUILD.gn b/third_party/swiftshader/third_party/marl/BUILD.gn
+index e1e29b1d5..a456cc9a6 100644
+--- a/third_party/swiftshader/third_party/marl/BUILD.gn
++++ b/third_party/swiftshader/third_party/marl/BUILD.gn
+@@ -92,6 +92,12 @@ swiftshader_source_set("Marl") {
+         "src/osfiber_asm_x86.h",
+         "src/osfiber_asm_x86.S",
+       ]
++    } else if (current_cpu == "riscv64") {
++      sources += [
++        "src/osfiber_riscv64.c",
++        "src/osfiber_asm_riscv64.h",
++        "src/osfiber_asm_riscv64.S",
++      ]
+     } else {
+       assert(false, "Unhandled value for current-cpu=" + current_cpu)
+     }
