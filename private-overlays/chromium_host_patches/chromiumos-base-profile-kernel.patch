@@ -1,0 +1,12 @@
+diff --git a/profiles/base/profile.bashrc b/profiles/base/profile.bashrc
+index b8e5346db26b..805b858f1edc 100644
+--- a/profiles/base/profile.bashrc
++++ b/profiles/base/profile.bashrc
+@@ -306,6 +306,7 @@ cros_pre_src_prepare_build_toolchain_catch() {
+ 		sys-devel/arc-llvm|\
+ 		sys-devel/gdb|\
+ 		sys-kernel/arcvm-kernel-*|\
++		sys-kernel/chromeos-kernel-*|\
+ 		sys-kernel/chromeos-kernel-3_18|\
+ 		sys-kernel/chromeos-kernel-4_14|\
+ 		sys-kernel/chromeos-kernel-4_19|\
