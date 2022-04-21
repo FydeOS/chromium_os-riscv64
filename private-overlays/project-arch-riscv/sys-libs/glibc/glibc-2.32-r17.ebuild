@@ -1374,7 +1374,7 @@ glibc_do_src_install() {
 		rm -rf ./usr/sbin
 
 		dosym usr/include $(alt_prefix)/sys-include
-    dosym usr/lib64 usr/lib64/lp64d
+    #dosym usr/lib64 usr/lib64/lp64d
 		return 0
 	fi
 

@@ -335,6 +335,6 @@ pkg_postrm() {
 	fi
 }
 
-PATCHES=(
-  "${FILESDIR}/fix-ld-search-path.patch"
-)
+#PATCHES=(
+#  "${FILESDIR}/fix-ld-search-path.patch"
+#)
