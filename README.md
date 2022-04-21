@@ -1,6 +1,6 @@
-The project aims to illustrate how to construct a available RISV-V toolchains for developers.
-In the following steps, We first prepare a ChroimumOS environment, replace 
-overlays with our private overlays to build basic cross compilers in gentoo chroot.
+The project aims to illustrate how to construct RISV-V toolchains for developers.
+In the following steps, We first prepare a ChroimumOS develop environment, replace 
+overlays with our private overlays to build basic cross compilers in Gentoo chroot.
 Finally, build ChroimumOS packages in RISC-V by cross compilers.
 
 Known issue: Chromium can't be built successfully.
@@ -247,14 +247,14 @@ Here assume the package is `attestation`.
 16:02:21 ERROR : Tue Apr 19 04:02:21 PM CST 2022
 ```
 
-Package in our private-overlays found:
+Find the package in our private-overlays:
 
 ```bash
 (cr) (release-R96-14268.B/(f993911...)) ~/chromiumos/src/scripts $ find ../private-overlays/project-arch-riscv/ -name attestation
 ../private-overlays/project-arch-riscv/chromeos-base/attestation
 ```
 
-So add the package name `attestation` to `../private-overlays/project-arch-riscv/profiles/base/package.mask` then call `emerge-jh7100 attestation`.
+Just add the package name `attestation` to `../private-overlays/project-arch-riscv/profiles/base/package.mask` then call `emerge-jh7100 attestation`.
 
 
 
