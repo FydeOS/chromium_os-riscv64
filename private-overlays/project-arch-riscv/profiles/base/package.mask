@@ -9,3 +9,4 @@ chromeos-base/spaced::chromiumos
 chromeos-base/chromeos-chrome::chromiumos
 chromeos-base/tpm_manager::chromiumos
 chromeos-base/attestation::chromiumos
+chromeos-base/cryptohome::chromiumos
