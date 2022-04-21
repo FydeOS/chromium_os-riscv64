@@ -3,13 +3,19 @@ In the following steps, We first prepare a ChroimumOS environment, replace
 overlays with our private overlays to build basic cross compilers in gentoo chroot.
 Finally, build ChroimumOS packages in RISC-V by cross compilers.
 
-Known issue: Chromium can't be built successfully. 
+Known issue: Chromium can't be built successfully.
+
 
 System requirement:
+
 OS Ubuntu Linux 18.04 LTS
+
 200G free disk space
+
 32G RAM
+
 Stable network
+
 
 ## Typography conventions
 
@@ -119,6 +125,8 @@ $ git clone https://github.com/openFyde/chromium_os-riscv64
 $ ln -snfr chromium_os-riscv64/private-overlays src/private-overlays
 ```
 
+<br>
+
 ## Fetch Chromium code
 ```bash
 $ cd r96
@@ -135,6 +143,8 @@ $ ln -sf dotgclient/dotgclient .gclient
 
 $ gclient sync --force
 ```
+
+<br>
 
 ## Applying patches
 ```bash
@@ -159,6 +169,8 @@ $ cd r96/src/third_party/chromiumos-overlay
 $ patch -p1 < ../../private-overlays/chromium_host_patches/chromiumos*patch
 
 ```
+
+<br>
 
 ## Create chroot
 ```bash
@@ -205,46 +217,19 @@ chromeos-chrome-96.0.4664.72_rc-r1: ld.lld: error: thinlto-cache/Thin-e1e979.tmp
 nt ABI
 ```
 
+
+<br>
+
 ## workarounds(inside)
-
-###chromeos-kernel-sifive
-While building chromeos-kernel-sifive, the following error occurs:
-
-```bash
-* pkg-config: ERROR: Do not call unprefixed tools directly.
- * pkg-config: ERROR: For board tools, use `tc-export PKG_CONFIG` (or ${CHOST}-pkg-config).
- * pkg-config: ERROR: For build-time-only tools, `tc-export BUILD_PKG_CONFIG` (or ${CBUILD}-pkg-config).
- * python3 /home/yue/o/chromite/bin/cros_sdk --nouse-image --chrome-root /home/yue/o/chromium
- *   `-python3 /home/yue/o/chromite/bin/cros_sdk --nouse-image --chrome-root /home/yue/o/chromium
- *       `-bash
- *           `-emerge -b /usr/lib/python-exec/python3.6/emerge --root-deps chromeos-kernel-sifive
- *               `-sandbox /usr/lib/portage/python3.6/ebuild.sh compile
- *                   `-ebuild.sh /usr/lib/portage/python3.6/ebuild.sh compile
- *                       `-ebuild.sh /usr/lib/portage/python3.6/ebuild.sh compile
- *                           `-emake /usr/lib/portage/python3.6/ebuild-helpers/emake V=0 O=/build/jh7100/var/cache/portage/sys-kernel/chromeos-kernel-sifive LD=riscv64-cros-linux-gnu-ld.bfd OBJCOPY=llvm-objcopy STRIP=llvm-strip CC=riscv64-cros-linux-gnu-gcc -fuse-ld=bfd C
-C_COMPAT= CXX=riscv64-cros-linux-gnu-g++ -fuse-ld=bfd HOSTCC=x86_64-pc-linux-gnu-gcc HOSTCXX=x86_64-pc-linux-gnu-g++ -k                  *                               `-make -j32 V=0 O=/build/jh7100/var/cache/portage/sys-kernel/chromeos-kernel-sifive LD=riscv64-cros-li$ux-gnu-ld.bfd OBJCOPY=llvm-objcopy STRIP=llvm-strip CC=riscv64-cros-linux-gnu-gcc -fuse-ld=bfd CC_COMPAT= CXX=riscv64-cros-linux-gnu-g++
- -fuse-ld=bfd HOSTCC=x86_64-pc-linux-gnu-gcc HOSTCXX=x86_64-pc-linux-gnu-g++ -k
- *                                   `-make -C /build/jh7100/var/cache/portage/sys-kernel/chromeos-kernel-sifive -f /build/jh7100/tmp/po
-rtage/sys-kernel/chromeos-kernel-sifive-5.16.0_rc3-r1/work/chromeos-kernel-sifive-5.16.0_rc3/Makefile
- *                                       `-make -f /build/jh7100/tmp/portage/sys-kernel/chromeos-kernel-sifive-5.16.0_rc3-r1/work/chrome
-os-kernel-sifive-5.16.0_rc3/scripts/Makefile.build obj=certs single-build= need-builtin=1 need-modorder=1
- *                                           `-sh -c pkg-config --cflags libcrypto 2> /dev/null
- *                                               `-pkg-config /build/jh7100/tmp/portage/sys-kernel/chromeos-kernel-sifive-5.16.0_rc3-r1/
-temp/build-toolchain-wrappers/pkg-config --cflags libcrypto
- *                                                   `-pstree -a -A -s -l 5192
- * ERROR: sys-kernel/chromeos-kernel-sifive-5.16.0_rc3-r1::chipset-riscv-u740 failed (compile phase):
- *   Bad pkg-config [--cflags libcrypto] invocation
-```
-
-Edit`../private-overlays/chipset-riscv-u740/sys-kernel/chromeos-kernel-sifive/chromeos-kernel-sifive-5.16.0_rc3-r1.ebuild`
-Remove the `cros-kernel2_src_compile` in `src_compile()` then call `emerge-7100 chromeos-kernel-sifive` again.
 
 
 ### minijail/gobject-introspection
 If build_packages stops due to failure of minijail/gobject-introspection.
 Run `sudo USE="qemu_user_targets_riscv64 qemu_softmmu_targets_riscv64" emerge qemu` then call `emerge-7100 minijail/gobject-introspection.`
 
-### the others
+
+### Miscellaneous things
+
 You may see the following issue because that the package::chromiumos is newer than packgae::arch-riscv.
 Here assume the package is `attestation`.
 
@@ -260,14 +245,14 @@ Here assume the package is `attestation`.
 - CWD: /build/jh7100/tmp/portage/chromeos-base/attestation-0.0.1-r3305/work/attestation-0.0.1/attestation
 - S: /build/jh7100/tmp/portage/chromeos-base/attestation-0.0.1-r3305/work/attestation-0.0.1/attestation
 16:02:21 ERROR : Tue Apr 19 04:02:21 PM CST 2022
-```bash
+```
 
 Package in our private-overlays found:
 
 ```bash
 (cr) (release-R96-14268.B/(f993911...)) ~/chromiumos/src/scripts $ find ../private-overlays/project-arch-riscv/ -name attestation
 ../private-overlays/project-arch-riscv/chromeos-base/attestation
-```bash
+```
 
 So add the package name `attestation` to `../private-overlays/project-arch-riscv/profiles/base/package.mask` then call `emerge-jh7100 attestation`.
 
