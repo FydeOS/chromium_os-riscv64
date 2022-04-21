@@ -120,7 +120,7 @@ $ repo init -u https://chromium.googlesource.com/chromiumos/manifest.git --repo-
 
 $ repo sync -j4 -vvv
 
-$ git clone https://github.com/openFyde/chromium_os-riscv64
+$ git clone https://github.com/FydeOS/chromium_os-riscv64
 
 $ ln -snfr chromium_os-riscv64/private-overlays src/private-overlays
 ```
@@ -183,7 +183,7 @@ Then you will see the shell prompt looks like:
 (cr) (release-R96-14268.B/(f993911...)) foo@bar ~/chromiumos/src/scripts $
 ```
 
-## Prepare cross-compilers(inside)
+## Prepare cross-compilers and build packages(inside)
 ```bash
 # download necessary binary tools from google sites
 ~/chromiumos/src/scripts $ setup_board --board=amd64-generic
