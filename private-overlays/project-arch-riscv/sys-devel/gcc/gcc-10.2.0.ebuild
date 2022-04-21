@@ -36,7 +36,7 @@ BDEPEND="${CATEGORY}/binutils"
 
 RESTRICT="strip"
 
-IUSE="cet gcc_repo gcj git_gcc go graphite gtk hardened hardfp llvm-next llvm-tot mounted_gcc multilib
+IUSE="cet gcc_repo gcj git_gcc -go graphite gtk hardened hardfp llvm-next llvm-tot mounted_gcc multilib
 	nls cxx openmp test tests +thumb upstream_gcc vanilla vtable_verify +wrapper_ccache"
 
 is_crosscompile() { [[ ${CHOST} != "${CTARGET}" ]] ; }
