@@ -135,9 +135,9 @@ $ mkdir chromium
 
 $ cd chromium
 
-$ git clone https://github.com/chromuim/chromium.git src -b 96.0.4664.118
+$ git clone https://github.com/chromium/chromium.git src -b 96.0.4664.118
 
-$ git clone https://github.com/openFyde/dotgclient.git -b chromuim
+$ git clone https://github.com/openFyde/dotgclient.git -b chromium
 
 $ ln -sf dotgclient/dotgclient .gclient
 
