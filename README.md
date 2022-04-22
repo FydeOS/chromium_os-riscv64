@@ -175,6 +175,7 @@ $ patch -p1 < ../../private-overlays/chromium_host_patches/chromiumos*patch
 ## Create chroot
 ```bash
 $ cd r96
+$ cp chromium_os-riscv64/bin/setup_board.sh src/scripts/
 $ cros_sdk --nouse-image   --chrome-root $(realpath chromium)
 
 ```
